@@ -1,0 +1,1 @@
+Base: https://github.com/theoplawinski/codrops-sticky-grid-scroll (MIT). This package is an adaptation. Retrieve and include the original LICENSE file from the repository when redistributing the project.

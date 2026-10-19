@@ -1,0 +1,17 @@
+{
+  "_nota": "Recorrido del hero: 5 tramos de la Ruta 9 unidos con fundido. Los clips NO empalman entre si: nunca concatenar sueltos. Correr: node scripts/hero-frames.mjs",
+  "salida": "public/panamericano/frames",
+  "fps_salida": 10,
+  "fundido_s": 0.6,
+  "juegos": [
+    { "nombre": "desktop", "ancho": 1600, "calidad": 70 },
+    { "nombre": "mobile", "ancho": 720, "calidad": 64, "recorte": "ih:ih:(iw-ih)*0.56:0" }
+  ],
+  "clips": [
+    { "archivo": "panamericano-hero-01-jujuy-purmamarca.mp4" },
+    { "archivo": "panamericano-hero-02-purmamarca-maimara.mp4" },
+    { "archivo": "panamericano-hero-03-maimara-quebrada.mp4" },
+    { "archivo": "panamericano-hero-04-puna-abra-pampa.mp4" },
+    { "archivo": "panamericano-hero-05-la-quiaca.mp4" }
+  ]
+}

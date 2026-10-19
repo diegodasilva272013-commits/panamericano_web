@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+# videos fuente del hero (pesan ~90 MB): se guardan localmente, los frames ya están en public/
+assets-src/**/*.mp4

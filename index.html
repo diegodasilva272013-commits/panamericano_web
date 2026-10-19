@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="es" class="no-js">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0b0b0a" />
+  <title>Panamericano Bus | Jujuy, Quebrada y Puna</title>
+  <meta name="description" content="Panamericano Bus conecta San Salvador de Jujuy con la Quebrada de Humahuaca y la Puna por la Ruta 9. Horarios, destinos y reservas online." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23f4b400'/%3E%3Cpath d='M8 11h16M8 16h16M8 21h16' stroke='%23171200' stroke-width='2.6'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/src/styles/base.css" />
+  <link rel="stylesheet" href="/src/styles/index.css" />
+  <link rel="stylesheet" href="/src/styles/site.css" />
+  <link rel="stylesheet" href="/src/styles/journey.css" />
+  <link rel="stylesheet" href="/src/styles/hero.css" />
+  <link rel="stylesheet" href="/src/styles/widgets.css" />
+  <script>document.documentElement.className = 'js';</script>
+</head>
+<body class="loading">
+
+  <header class="nav" id="nav">
+    <a class="nav__brand" href="#top" aria-label="Panamericano Bus, inicio">
+      <span class="nav__mark" aria-hidden="true"><svg viewBox="0 0 24 24"><rect width="24" height="24" rx="7" fill="#f4b400"/><path d="M2 18c7 1 14-3 20-11v5C16 19 9 22 2 21z" fill="#171200"/><path d="M2 21c7 1 14-3 20-11" stroke="#d8261f" stroke-width="2.2" fill="none"/></svg></span><span>Panamericano</span>
+    </a>
+    <nav class="nav__links" aria-label="Principal">
+      <a href="#horarios">Horarios</a>
+      <a href="#destinos">Destinos</a>
+      <a href="#reservar">Reservar</a>
+      <a href="#antes">Antes de viajar</a>
+      <a href="#contacto">Contacto</a>
+    </nav>
+    <a class="nav__book" href="#reservar">Reservar</a>
+    <button class="nav__call" type="button" data-open-call>
+      <span class="nav__call-dot" aria-hidden="true"></span>Llamar
+    </button>
+  </header>
+
+  <main id="top">
+    <!-- 01 · HERO: viaje por la Ruta 9 (secuencia de cuadros con scroll) -->
+    <section class="hs" id="hero" aria-label="Viaje por la Ruta 9, de San Salvador de Jujuy a La Quiaca">
+      <div class="hs__stage">
+        <picture>
+          <source media="(max-width:700px)" srcset="/panamericano/hero-poster-mobile.webp" />
+          <img class="hs__poster" src="/panamericano/hero-poster.webp" alt="" fetchpriority="high" />
+        </picture>
+        <canvas class="hs__canvas" aria-hidden="true"></canvas>
+        <div class="hs__scrim"></div>
+        <div class="hs__dim"></div>
+        <div class="hs__intro" id="hs-intro"></div>
+        <div id="hs-chapters"></div>
+        <ol class="hs__rail" id="hs-rail" aria-hidden="true"></ol>
+        <div class="hs__end" id="hs-end">
+          <h2 class="hs__end-title" id="hs-end-title"></h2>
+          <p class="hs__end-text" id="hs-end-text"></p>
+          <form class="finder" id="finder" aria-label="Buscar horarios">
+            <label class="finder__field"><span>Origen</span>
+              <select id="f-origin" name="origin"></select>
+            </label>
+            <button class="finder__swap" type="button" id="f-swap" aria-label="Invertir origen y destino">⇄</button>
+            <label class="finder__field"><span>Destino</span>
+              <select id="f-dest" name="dest"></select>
+            </label>
+            <button class="finder__go" type="submit">Ver horarios</button>
+          </form>
+        </div>
+        <div class="hs__load" aria-hidden="true"><i></i></div>
+      </div>
+    </section>
+
+    <!-- 02 · EFECTO STICKY GRID -->
+    <section class="block block--main" id="empresa">
+      <div class="block__wrapper">
+        <div class="content">
+          <h2 class="content__title">Conectamos<br /><em>caminos.</em></h2>
+          <p class="content__description">Trabajadores, vecinos y viajeros entre los cerros de colores y el altiplano.</p>
+          <a class="content__button" href="#horarios">Ver horarios ↓</a>
+        </div>
+        <div class="gallery" aria-label="Destinos Panamericano">
+          <ul class="gallery__grid" id="gallery"></ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- 03 · DATOS -->
+    <ul class="facts" aria-label="Panamericano en breve">
+      <li>Todos los días</li><li>Feriados incluidos</li><li>11 localidades</li><li>6 boleterías</li>
+    </ul>
+
+    <!-- 04 · HORARIOS -->
+    <section class="sec sec--schedule" id="horarios">
+      <div class="sec__head">
+        <h2 class="display">Próximas salidas.<br /><em>En vivo, desde tu origen.</em></h2>
+      </div>
+
+      <div class="board" id="board">
+        <div class="board__head">
+          <div class="seg" role="group" aria-label="Origen" id="s-origins"></div>
+          <p class="board__clock"><span id="board-clock">--:--</span><small>hora de Jujuy</small></p>
+        </div>
+        <ol class="board__rows" id="board-rows" aria-live="polite"></ol>
+        <p class="board__note" id="board-note"></p>
+      </div>
+
+      <div class="sched">
+        <h3 class="sched__title">Todas las salidas del día</h3>
+        <div class="chips" id="s-dests" role="group" aria-label="Destino"></div>
+        <p class="sched__count label" id="s-count"></p>
+        <div class="sched__grid" id="s-grid"></div>
+        <p class="sched__note" id="s-note"></p>
+      </div>
+    </section>
+
+    <!-- 05 · DESTINOS -->
+    <section class="sec sec--dest" id="destinos">
+      <div class="sec__head">
+        <h2 class="display">Del valle<br /><em>al altiplano.</em></h2>
+      </div>
+      <div class="rail" id="rail" tabindex="0" aria-label="Destinos, deslizá horizontalmente"></div>
+    </section>
+
+    <!-- 06 · EL VIAJE -->
+    <section class="journey" id="viaje" aria-label="El viaje por la Ruta 9, de Jujuy a La Quiaca">
+      <div class="journey__stage">
+        <div class="journey__top">
+          <p class="journey__alt" aria-live="off"><span id="v-alt">1.260</span><small>m</small></p>
+          <h2 class="journey__stop" id="v-stop">San Salvador de Jujuy</h2>
+          <p class="journey__note" id="v-note">Terminal Gral. Belgrano · donde empieza todo</p>
+        </div>
+        <div class="journey__chart" id="v-chart">
+          <svg id="v-svg" aria-hidden="true">
+            <g id="v-grid"></g>
+            <path id="v-ground"/><path id="v-line"/><path id="v-prog"/>
+          </svg>
+          <ol class="journey__labels" id="v-labels" aria-hidden="true"></ol>
+          <div class="journey__bus" id="v-bus"><svg viewBox="0 0 160 62" aria-hidden="true"><path d="M7 12q0-8 8-8h124q15 0 15 15v28q0 4-4 4H12q-5 0-5-5z" fill="#14120f"/><path d="M128 8h16q8 0 8 9v15h-24z" fill="#8fa3b5"/><g fill="#c4231c"><rect x="15" y="10" width="13" height="11" rx="2"/><rect x="31" y="10" width="13" height="11" rx="2"/><rect x="47" y="10" width="13" height="11" rx="2"/><rect x="63" y="10" width="13" height="11" rx="2"/><rect x="79" y="10" width="13" height="11" rx="2"/><rect x="95" y="10" width="13" height="11" rx="2"/><rect x="111" y="10" width="13" height="11" rx="2"/></g><g fill="#51657a"><rect x="15" y="26" width="13" height="10" rx="2"/><rect x="31" y="26" width="13" height="10" rx="2"/><rect x="47" y="26" width="13" height="10" rx="2"/><rect x="63" y="26" width="13" height="10" rx="2"/></g><path d="M7 47c46 6 96-8 146-30v12C103 52 53 62 7 56z" fill="#f4b400"/><path d="M7 57c46 5 96-9 146-31" stroke="#d8261f" stroke-width="3.4" fill="none"/><path d="M7 52c46 5 96-9 146-31" stroke="#f3efe6" stroke-width="1.2" fill="none"/><rect x="150" y="30" width="5" height="6" rx="1.5" fill="#ffe9a6"/><g><circle cx="38" cy="54" r="8" fill="#0b0b0a" stroke="#3b3b37" stroke-width="2"/><circle cx="54" cy="54" r="8" fill="#0b0b0a" stroke="#3b3b37" stroke-width="2"/><circle cx="124" cy="54" r="8" fill="#0b0b0a" stroke="#3b3b37" stroke-width="2"/><circle cx="38" cy="54" r="2.6" fill="#8a867b"/><circle cx="54" cy="54" r="2.6" fill="#8a867b"/><circle cx="124" cy="54" r="2.6" fill="#8a867b"/></g></svg></div>
+        </div>
+        <p class="journey__hint">Seguí el camino</p>
+        <a class="btn btn--accent journey__cta" href="#reservar">Reservar Jujuy → La Quiaca</a>
+      </div>
+      <ol class="sr">
+        <li>San Salvador de Jujuy, 1.260 metros</li><li>Volcán, 1.700</li><li>Tumbaya, 2.050</li><li>Purmamarca, 2.324</li><li>Maimará, 2.383</li><li>Tilcara, 2.461</li><li>Huacalera, 2.640</li><li>Humahuaca, 2.939</li><li>Tres Cruces, 3.700</li><li>Abra Pampa, 3.484</li><li>La Quiaca, 3.442 (alturas aproximadas)</li>
+      </ol>
+    </section>
+
+    <!-- 07 · RESERVA -->
+    <section class="sec sec--book" id="reservar">
+      <div class="sec__head">
+        <h2 class="display">Reservá tu lugar<br /><em>en cuatro pasos.</em></h2>
+      </div>
+
+      <div class="book" id="book">
+        <div class="book__main">
+        <ol class="book__steps" id="b-steps" aria-label="Pasos">
+          <li>Viaje</li><li>Horario</li><li>Asiento</li><li>Datos</li>
+        </ol>
+
+        <div class="book__panel" data-step="0">
+          <div class="form-grid">
+            <label class="field"><span>Origen</span><select id="b-origin"></select></label>
+            <label class="field"><span>Destino</span><select id="b-dest"></select></label>
+            <label class="field"><span>Fecha</span><input type="date" id="b-date" /></label>
+            <label class="field"><span>Pasajeros</span>
+              <select id="b-pax"><option>1</option><option>2</option><option>3</option><option>4</option></select>
+            </label>
+          </div>
+        </div>
+
+        <div class="book__panel" data-step="1" hidden>
+          <p class="book__hint" id="b-route-label"></p>
+          <div class="chips chips--big" id="b-times"></div>
+        </div>
+
+        <div class="book__panel" data-step="2" hidden>
+          <div class="seats-wrap">
+            <div class="seats" id="b-seats" role="group" aria-label="Mapa de asientos"></div>
+            <ul class="seats__legend">
+              <li><i class="s s--free"></i>Libre</li>
+              <li><i class="s s--taken"></i>Ocupado</li>
+              <li><i class="s s--mine"></i>Tu selección</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="book__panel" data-step="3" hidden>
+          <div class="form-grid" id="b-people"></div>
+        </div>
+
+        <div class="book__panel book__done" data-step="4" hidden>
+          <div class="ticket" id="b-ticket"></div>
+        </div>
+
+        <div class="book__bar" id="b-bar">
+          <p class="book__summary" id="b-summary">Elegí origen, destino y fecha.</p>
+          <div class="book__actions">
+            <button class="btn btn--ghost" type="button" id="b-back" hidden>Atrás</button>
+            <button class="btn" type="button" id="b-next">Continuar</button>
+          </div>
+        </div>
+        <p class="book__legal">Demo de reserva: la solicitud se confirma con la boletería por WhatsApp. No se realiza ningún cobro y la tarifa se informa al confirmar.</p>
+        </div>
+        <aside class="book__aside" id="b-aside" aria-label="Tu pasaje"></aside>
+      </div>
+    </section>
+
+    <!-- 08 · A BORDO -->
+    <section class="sec sec--board" id="abordo">
+      <div class="board__media">
+        <img src="/img/bus-negro.avif" alt="Ómnibus Panamericano negro y amarillo" />
+      </div>
+      <div class="board__copy">
+        <h2 class="display">Viajá<br /><em>conectado.</em></h2>
+        <dl class="specs" id="specs"></dl>
+      </div>
+    </section>
+
+    <!-- 09 · ANTES DE VIAJAR -->
+    <section class="sec sec--faq" id="antes">
+      <div class="sec__head">
+        <h2 class="display">Lo que<br /><em>conviene saber.</em></h2>
+      </div>
+      <div class="faq" id="faq"></div>
+    </section>
+
+    <div class="swoosh" aria-hidden="true">
+      <svg viewBox="0 -34 1440 174" preserveAspectRatio="none">
+        <path class="sw-paper" d="M0,140 L0,96 C420,112 940,52 1440,6 L1440,140 Z"/>
+        <path class="sw-y" d="M0,90 C420,106 940,46 1440,0"/>
+        <path class="sw-r" d="M0,78 C420,94 940,34 1440,-12"/>
+        <path class="sw-w" d="M0,69 C420,85 940,25 1440,-21"/>
+      </svg>
+    </div>
+
+    <!-- 10 · CONTACTO -->
+    <section class="contact" id="contacto">
+      <div class="contact__lead">
+        <h2 class="display">Hablemos.<br /><em>Estamos en el camino.</em></h2>
+        <div class="contact__cta">
+          <button class="btn btn--accent" type="button" data-open-call>Llamar ahora</button>
+          <button class="btn btn--ghost" type="button" data-open-wa>Escribir por WhatsApp</button>
+        </div>
+        <p class="contact__central">Central <a href="tel:+543884254331">0388 425-4331</a></p>
+      </div>
+      <ul class="boleterias" id="boleterias"></ul>
+    </section>
+
+    <footer class="foot">
+      <div class="foot__brand"><span class="nav__mark" aria-hidden="true"><svg viewBox="0 0 24 24"><rect width="24" height="24" rx="7" fill="#f4b400"/><path d="M2 18c7 1 14-3 20-11v5C16 19 9 22 2 21z" fill="#171200"/><path d="M2 21c7 1 14-3 20-11" stroke="#d8261f" stroke-width="2.2" fill="none"/></svg></span>Panamericano</div>
+      <p>Terminal de Ómnibus Gral. Manuel Belgrano · Puesto del Marqués 605 · San Salvador de Jujuy (4600)</p>
+      <p class="foot__small">Transporte de pasajeros en Jujuy. Operamos todos los días, incluidos feriados. Sitio de demostración.</p>
+    </footer>
+  </main>
+
+  <!-- DOCK DE CONTACTO -->
+  <div class="dock" id="dock">
+    <button class="dock__btn dock__btn--wa" type="button" data-open-wa aria-label="Abrir chat de WhatsApp"><span class="dock__lbl">WhatsApp</span>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12.04 2a9.9 9.9 0 0 0-8.5 14.9L2 22l5.25-1.38A9.9 9.9 0 1 0 12.04 2Zm0 1.8a8.1 8.1 0 1 1-4.28 15l-.3-.18-3.12.82.83-3.04-.2-.31A8.1 8.1 0 0 1 12.04 3.8Zm-3.2 3.9c-.16 0-.42.06-.64.3-.22.25-.84.82-.84 2 0 1.2.86 2.35.98 2.5.12.17 1.7 2.7 4.18 3.67 2.06.8 2.48.65 2.93.6.45-.04 1.44-.59 1.64-1.16.2-.57.2-1.06.14-1.16-.06-.1-.22-.16-.46-.28-.25-.12-1.44-.71-1.66-.79-.22-.08-.39-.12-.55.12-.16.25-.63.79-.77.95-.14.16-.28.18-.52.06-.25-.12-1.03-.38-1.96-1.2-.73-.65-1.22-1.45-1.36-1.7-.14-.24-.02-.37.1-.5l.37-.43c.12-.14.16-.24.24-.4.08-.17.04-.31-.02-.43-.06-.12-.54-1.32-.75-1.8-.2-.47-.4-.4-.55-.41h-.47Z"/></svg>
+    </button>
+    <button class="dock__btn dock__btn--call" type="button" data-open-call aria-label="Llamar al asistente de voz"><span class="dock__lbl">Llamar</span>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25c1.1.37 2.3.57 3.6.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.6a1 1 0 0 1-.25 1l-2.22 2.2Z"/></svg>
+    </button>
+  </div>
+
+  <!-- LLAMADA VIP -->
+  <section class="call" id="call" aria-hidden="true" role="dialog" aria-label="Llamada con el asistente de Panamericano">
+    <div class="call__bg"></div>
+    <div class="call__inner">
+      <button class="call__min" type="button" data-close-call aria-label="Cerrar llamada"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <div class="call__who">
+        <p class="call__label">Panamericano · Atención VIP</p>
+        <h3 class="call__name">Asistente de viajes</h3>
+        <p class="call__status" id="call-status">Listo para llamar</p>
+      </div>
+      <div class="orb" id="orb" aria-hidden="true">
+        <canvas id="orb-canvas" width="640" height="640"></canvas>
+        <div class="orb__core"><span>P</span></div>
+      </div>
+      <p class="call__hint" id="call-hint">Consultá horarios, destinos y reservas hablando.</p>
+      <div class="call__controls">
+        <button class="ctl" type="button" id="call-mute" disabled aria-pressed="false">
+          <span class="ctl__ico"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V22h2v-3.08A7 7 0 0 0 19 12h-2Z"/></svg></span>
+          <span class="ctl__txt">Silenciar</span>
+        </button>
+        <button class="ctl ctl--start" type="button" id="call-main">
+          <span class="ctl__ico"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25c1.1.37 2.3.57 3.6.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.6a1 1 0 0 1-.25 1l-2.22 2.2Z"/></svg></span>
+          <span class="ctl__txt">Llamar</span>
+        </button>
+        <button class="ctl" type="button" data-open-wa data-close-call>
+          <span class="ctl__ico"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 4h16v12H7.2L4 19.2V4Z"/></svg></span>
+          <span class="ctl__txt">Mensaje</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- WHATSAPP -->
+  <aside class="wa" id="wa" aria-hidden="true" aria-label="Chat de WhatsApp con Panamericano">
+    <header class="wa__head">
+      <div class="wa__avatar" aria-hidden="true">P</div>
+      <div class="wa__title"><strong>Panamericano · Boletería</strong><span>Suele responder en el día</span></div>
+      <button class="wa__close" type="button" data-close-wa aria-label="Cerrar"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
+    </header>
+    <div class="wa__body" id="wa-body">
+      <div class="wa__msg wa__msg--in">¡Hola! 👋 Soy el equipo de Panamericano. ¿En qué te ayudamos?</div>
+      <div class="wa__quick" id="wa-quick"></div>
+    </div>
+    <form class="wa__form" id="wa-form">
+      <input id="wa-input" type="text" placeholder="Escribí tu mensaje" autocomplete="off" aria-label="Mensaje" />
+      <button type="submit" aria-label="Enviar por WhatsApp">
+        <svg viewBox="0 0 24 24"><path fill="currentColor" d="m3 20 18-8L3 4v6l11 2-11 2v6Z"/></svg>
+      </button>
+    </form>
+    <p class="wa__foot">Al enviar se abre WhatsApp con tu mensaje listo.</p>
+  </aside>
+
+  <script type="module" src="/src/scripts/index.js"></script>
+</body>
+</html>
