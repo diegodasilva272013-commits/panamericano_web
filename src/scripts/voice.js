@@ -1,5 +1,8 @@
-import { Conversation } from "@elevenlabs/client";
 import { AGENT_ID } from "./data.js";
+
+// La libreria de la llamada pesa bastante: se baja recien al abrir el panel de llamada, no al cargar la pagina.
+let sdkPromise;
+const sdk = () => (sdkPromise ||= import("@elevenlabs/client").then((m) => m.Conversation));
 
 const $ = (s) => document.querySelector(s);
 const root = $("#call");
@@ -116,7 +119,7 @@ async function startCall() {
   const tryConnect = (connectionType) => {
     let timer;
     const timeout = new Promise((_, rej) => (timer = setTimeout(() => rej(new Error("timeout")), 12000)));
-    const session = Conversation.startSession({ agentId: AGENT_ID, connectionType, ...callbacks });
+    const session = sdk().then((Conversation) => Conversation.startSession({ agentId: AGENT_ID, connectionType, ...callbacks }));
     // si la sesión llega tarde (después del timeout), se descarta
     session.then((c) => { if (attempt !== attemptId || phase === "idle") c.endSession().catch(() => {}); }).catch(() => {});
     return Promise.race([session, timeout]).finally(() => clearTimeout(timer));
@@ -146,6 +149,7 @@ async function endCall(remote = false) {
 }
 
 export function openCall() {
+  sdk().catch(() => {}); // precarga mientras se muestra el panel
   root.classList.add("is-open"); root.setAttribute("aria-hidden", "false");
   document.getElementById("dock").classList.add("is-hidden");
   cancelAnimationFrame(raf); draw();

@@ -1,6 +1,8 @@
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 
+gsap.registerPlugin(ScrollTrigger);
+
 // Hero con scroll: una secuencia de cuadros dibujada en un <canvas> segun el progreso del scroll
 // (misma tecnica y misma carga progresiva que el hero de /propuesta-payma).
 
@@ -33,47 +35,86 @@ export async function initHeroScroll(cfg, { reduce }) {
     to: i === cfg.etapas.length - 1 ? cfg.cierreDesde - 0.01 : b[e.clip + 1],
   }));
 
-  /* ---------- carga progresiva: 1.o, 1 de cada 8, 1 de cada 4, el resto ---------- */
+  /* ---------- carga de cuadros con criterio ----------
+     1) cuadros clave (1 de cada 8; 1 de cada 12 en conexion lenta) -> el hero ya se puede recorrer
+     2) despues de que la pagina termino de cargar: los cuadros cercanos a donde estas scrolleando
+     3) en conexion rapida, el resto se completa en segundo plano. Los cuadros son los mismos, a la misma resolucion. */
   let images = [];
   let juego = "";
   let cancelLoad = () => {};
+  let pumpNow = () => {};
   let ready = false;
   let lastDrawn = -1;
+  const prog = { p: 0 };
 
-  const frameUrl = (j, i) => `${cfg.base}/${j}/${manifest.patron.replace(/%0(\d)d/, (_, w) => String(i + 1).padStart(+w, "0"))}`;
+  const ver = manifest.v ? `?v=${manifest.v}` : "";
+  const frameUrl = (j, i) => `${cfg.base}/${j}/${manifest.patron.replace(/%0(\d)d/, (_, w) => String(i + 1).padStart(+w, "0"))}${ver}`;
 
   function load(j, staticOnly) {
     cancelLoad();
     juego = j; images = new Array(total).fill(null); ready = false; lastDrawn = -1;
     let cancelled = false; cancelLoad = () => { cancelled = true; };
-    const order = [], seen = new Set();
-    const push = (i) => { if (i >= 0 && i < total && !seen.has(i)) { seen.add(i); order.push(i); } };
-    push(0);
-    if (staticOnly) push(Math.round(cfg.cuadroEstatico * (total - 1)));
-    else {
-      for (let i = 0; i < total; i += 8) push(i);
-      push(total - 1);
-    }
-    const firstPass = order.length;
-    if (!staticOnly) { for (let i = 0; i < total; i += 4) push(i); for (let i = 0; i < total; i++) push(i); }
-    let done = 0, cursor = 0;
-    const next = () => {
-      if (cancelled || cursor >= order.length) return;
-      const idx = order[cursor], first = cursor < firstPass; cursor++;
+
+    const conn = navigator.connection || {};
+    const slow = !!(conn.saveData || /(^|-)(slow-2g|2g|3g)$/.test(conn.effectiveType || ""));
+    const stride = slow ? 12 : 8;
+    const LOOK = slow ? 36 : 70;                  // cuadros por delante y por detras que siempre se mantienen cargados
+    const MAX = staticOnly ? 2 : slow ? 3 : 5;    // pedidos en paralelo
+    const state = new Uint8Array(total);          // 0 pendiente · 1 en curso · 2 terminado
+
+    const keys = [], seen = new Set();
+    const pushKey = (i) => { if (i >= 0 && i < total && !seen.has(i)) { seen.add(i); keys.push(i); } };
+    pushKey(0);
+    if (staticOnly) pushKey(Math.round(cfg.cuadroEstatico * (total - 1)));
+    else { for (let i = 0; i < total; i += stride) pushKey(i); pushKey(total - 1); }
+    let keysDone = 0, keyCursor = 0, inflight = 0;
+
+    const nextFill = () => {
+      if (staticOnly || document.readyState !== "complete") return -1;
+      const cur = Math.round(clamp01(prog.p) * (total - 1));
+      for (let d = 0; d <= LOOK; d++) {            // primero lo que viene adelante, despues lo de atras
+        const a = cur + d, b2 = cur - d;
+        if (a < total && state[a] === 0) return a;
+        if (b2 >= 0 && state[b2] === 0) return b2;
+      }
+      if (slow) return -1;                         // en conexion lenta no se descarga de mas
+      for (let d = LOOK + 1; d < total; d++) {     // conexion rapida: se completa el resto, desde lo mas cercano
+        const a = cur + d, b2 = cur - d;
+        if (a < total && state[a] === 0) return a;
+        if (b2 >= 0 && state[b2] === 0) return b2;
+      }
+      return -1;
+    };
+
+    const get = (idx, isKey) => {
+      state[idx] = 1; inflight++;
       const img = new Image(); img.decoding = "async";
       img.onload = img.onerror = () => {
+        inflight--; state[idx] = 2;
         if (cancelled) return;
         if (img.naturalWidth) images[idx] = img;
-        if (first) {
-          done++;
-          if (loadBar) loadBar.style.transform = `scaleX(${done / firstPass})`;
-          if (done === firstPass) { ready = true; stage.classList.add("is-ready"); }
+        if (isKey) {
+          keysDone++;
+          if (loadBar) loadBar.style.transform = `scaleX(${keysDone / keys.length})`;
+          if (keysDone === keys.length) { ready = true; stage.classList.add("is-ready"); }
         }
-        next();
+        pump();
       };
       img.src = frameUrl(j, idx);
     };
-    for (let k = 0; k < (staticOnly ? 2 : 6); k++) next();
+    function pump() {
+      if (cancelled || document.hidden) return;
+      while (inflight < MAX) {
+        if (keyCursor < keys.length) { const k = keys[keyCursor++]; get(k, true); continue; }
+        const n = nextFill();
+        if (n < 0) break;
+        get(n, false);
+      }
+    }
+    pumpNow = pump;
+    addEventListener("load", () => setTimeout(pump, 400), { once: true });
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) pump(); });
+    pump();
   }
 
   const pick = () => (mq.matches ? "mobile" : "desktop");
@@ -164,7 +205,7 @@ export async function initHeroScroll(cfg, { reduce }) {
     if (!visible && Math.abs(target - cur) < 0.0005) return;
     cur += (target - cur) * 0.16;
     if (Math.abs(target - cur) < 0.0003) cur = target;
-    draw(cur); overlays(cur);
+    prog.p = cur; pumpNow(); draw(cur); overlays(cur);
   };
   gsap.ticker.add(tick);
   draw(0, true); overlays(0);

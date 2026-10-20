@@ -49,7 +49,7 @@ function filter(juego) {
 const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
 const mpath = path.join(OUT, 'manifest.json');
 const manifest = (only && fs.existsSync(mpath)) ? JSON.parse(fs.readFileSync(mpath, 'utf-8')) : { count: 0, juegos: {} };
-Object.assign(manifest, { fps: cfg.fps_salida, duracion_s: Number(totalDur.toFixed(2)), patron: 'f_%04d.webp', cortes });
+Object.assign(manifest, { v: Date.now().toString(36), fps: cfg.fps_salida, duracion_s: Number(totalDur.toFixed(2)), patron: 'f_%04d.webp', cortes });
 for (const j of cfg.juegos.filter((x) => !only || x.nombre === only)) {
   const dir = path.join(OUT, j.nombre);
   fs.rmSync(dir, { recursive: true, force: true });
