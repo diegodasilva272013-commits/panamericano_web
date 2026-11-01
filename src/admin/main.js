@@ -41,6 +41,8 @@ const histGo = (d) => {
   redraw(); paintStatus(); paintUndo(); histSave();
 };
 
+// los errores de red se explican en llano (nunca "TypeError: Failed to fetch")
+const plain = (e) => (/fetch|network|conexi|tard|abort|load failed|offline/i.test(String(e?.message || e)) ? "No hay conexión con la base de datos. Revisá tu internet y probá de nuevo." : String(e?.message || e));
 const mark = '<svg viewBox="0 0 24 24" width="26" height="26"><rect width="24" height="24" rx="7" fill="#f4b400"/><path d="M2 18c7 1 14-3 20-11v5C16 19 9 22 2 21z" fill="#171200"/><path d="M2 21c7 1 14-3 20-11" stroke="#d8261f" stroke-width="2.2" fill="none"/></svg>';
 const brand = () => h("div", { class: "brand", html: mark + "<span>Panamericano</span>" });
 const sectionLabel = (id) => SECTIONS.find((s) => s.id === id)?.label || id;
@@ -106,14 +108,15 @@ function retryScreen(msg) {
   app.replaceChildren(entry([
     h("h1", {}, "No pudimos cargar el panel"),
     h("p", { class: "lead" }, "Revisá tu conexión a internet y probá de nuevo. Tus cambios sin publicar no se pierden."),
-    h("p", { class: "err", role: "alert" }, msg),
+    h("p", { class: "err", role: "alert" }, plain(msg)),
     h("button", { class: "btn", type: "button", onclick: () => boot() }, "Reintentar"),
   ]));
+  document.body.dataset.retry = "1"; // al volver internet, se reintenta solo
 }
 
 // la primera vez que se entra: tres cosas para saber (se puede saltar)
-function welcome() {
-  if (store.get("pm-admin-welcome")) return;
+function welcome(force) {
+  if (!force && store.get("pm-admin-welcome")) return;
   store.set("pm-admin-welcome", "1");
   confirmBox(h("div", { class: "help" }, h("h3", {}, "Bienvenida"), h("p", {}, "Tres cosas para saber:"),
     h("ol", {}, h("li", {}, "Elegí qué querés cambiar en el menú, o escribilo en el buscador (Ctrl K)."),
@@ -141,6 +144,7 @@ const setDirty = () => {
 function paintErrBar() {
   if (!errBar) return;
   const errs = showErrBar ? validate(draft) : [];
+  const sig = errs.map((x) => x.msg).join("|"); if (sig === errBar.dataset.sig) return; errBar.dataset.sig = sig; // no se vuelve a dibujar (ni anunciar) si no cambió
   if (!errs.length) { errBar.hidden = true; errBar.replaceChildren(); return; }
   errBar.hidden = false;
   errBar.replaceChildren(h("strong", {}, `Faltan ${errs.length} ${errs.length === 1 ? "dato" : "datos"} para publicar:`),
@@ -150,7 +154,8 @@ function paintErrBar() {
 function paintStatus() {
   if (!statusEl) return;
   const ch = isDirty ? [...changedSections()] : [];
-  statusEl.textContent = isDirty ? (ch.length ? `Hay cambios sin publicar en ${ch.map(sectionLabel).join(", ")}` : "Hay cambios sin publicar") : lastPub ? `Publicado · ${fmtShort(lastPub)}` : "Todo publicado";
+  statusEl.title = ch.map(sectionLabel).join(", ");
+  statusEl.textContent = isDirty ? (ch.length > 1 ? `Hay cambios sin publicar en ${ch.length} pantallas` : ch.length ? `Hay cambios sin publicar en ${sectionLabel(ch[0])}` : "Hay cambios sin publicar") : lastPub ? `Publicado · ${fmtShort(lastPub)}` : "Todo publicado";
   statusEl.className = "state " + (isDirty ? "is-dirty" : "is-ok");
   saveBtn.disabled = !isDirty;
   saveBtn.title = isDirty ? "Guardar y publicar (Ctrl+S)" : "No hay cambios para publicar";
@@ -175,7 +180,7 @@ async function publish() {
     await saveContent(strip(draft), user.id);
     remoteData = strip(draft); lastPub = new Date(); computeBase(); histSave(); store.del(DRAFT_KEY); clearTimeout(stashTimer);
     isDirty = false; paintStatus(); toast("Publicado. La web ya muestra los cambios.");
-  } catch (e) { toast(`No se pudo publicar: ${e.message}`, "err", 12000, { label: "Reintentar", icon: "redo", run: () => publish() }); saveBtn.disabled = false; }
+  } catch (e) { toast(`No se pudo publicar. ${plain(e)}`, "err", 12000, { label: "Reintentar", icon: "redo", run: () => publish() }); saveBtn.disabled = false; }
   finally { saveLabel(); topEl.classList.remove("is-busy"); paintStatus(); }
 }
 
@@ -185,13 +190,13 @@ const help = (sec) => confirmBox(h("div", { class: "help" },
   sec.desc && h("p", {}, sec.desc),
   h("ol", {}, (sec.help || []).map((s) => h("li", {}, s))),
   h("section", {}, h("strong", {}, "Me equivoqué, ¿puedo volver atrás?"),
-    h("p", {}, "Sí. Si quitaste algo, tocá \"Deshacer\". Antes de publicar, \"Descartar cambios\" deja todo como estaba. Si ya publicaste, en \"Versiones anteriores\" cargás cualquier versión vieja."))),
+    h("p", {}, "Sí. Tocá \"Deshacer\" (o Ctrl+Z) las veces que quieras. \"Descartar cambios\" deja todo como está publicado, y también se puede deshacer. Si ya publicaste, en \"Versiones anteriores\" cargás cualquier versión vieja."))),
   "Entendido", false);
 
 const shortcuts = () => confirmBox(h("div", { class: "help" },
   h("h3", {}, "Atajos del teclado"),
   h("dl", { class: "keys" },
-    ...[["Ctrl + S", "Guardar y publicar"], ["Ctrl + K", "Buscar una pantalla, un servicio o una ayuda"], ["Ctrl + Z", "Deshacer el último cambio (fuera de un campo de texto)"], ["Ctrl + Shift + Z", "Rehacer"],
+    ...[["Ctrl + S", "Guardar y publicar"], ["Ctrl + K", "Buscar una pantalla, un servicio o una ayuda"], ["Ctrl + Z", "Deshacer el último cambio, también mientras escribís"], ["Ctrl + Shift + Z", "Rehacer"],
       ["Enter", "Confirmar una hora"], ["Esc", "Cerrar la ventanita o el aviso"], ["?", "Ver esta lista"]].flatMap(([k, d]) => [h("dt", {}, h("kbd", {}, k)), h("dd", {}, d)]))),
   "Entendido", false);
 
@@ -208,20 +213,24 @@ function palette() {
     { label: "Ver la web", sub: "Se abre en otra pestaña", run: () => window.open("/", "_blank", "noopener") },
     ...SECTIONS.map((s) => ({ label: `Cómo se hace: ${s.label}`, sub: "Ayuda", run: () => help(s) })),
     { label: "Ver atajos del teclado", sub: "?", run: () => shortcuts() },
+    { label: "Ver la bienvenida", sub: "Los tres pasos para empezar", run: () => welcome(true) },
   ];
+  const KW = { contacto: "teléfono telefono whatsapp boletería boleteria dirección pregunta frecuentes faq", galeria: "foto fotos imagen galería a bordo servicios", hero: "video titular botones portada inicio", textos: "menú titulo título frase texto", horarios: "salida hora horas servicio tablero", destinos: "lugar lugares ciudad pueblo tarjeta", historial: "versión version volver atrás" };
+  acts.forEach((a) => { const s = SECTIONS.find((x) => x.label === a.label); if (s) a.kw = KW[s.id] || ""; });
   let sel = 0, shown = acts;
-  const input = h("input", { type: "text", placeholder: "Escribí a dónde querés ir…", "aria-label": "Buscar pantalla o acción", role: "combobox", "aria-expanded": "true" });
-  const ul = h("ul", { class: "palette__list", role: "listbox" });
+  const input = h("input", { type: "text", placeholder: "Escribí a dónde querés ir…", "aria-label": "Buscar pantalla o acción", role: "combobox", "aria-expanded": "true", "aria-controls": "pal-list", "aria-autocomplete": "list" });
+  const ul = h("ul", { class: "palette__list", role: "listbox", id: "pal-list" });
   const close = () => { ov.remove(); document.removeEventListener("keydown", key, true); };
   const run = (a) => { close(); a.run(); };
-  const draw = () => { ul.replaceChildren(...shown.map((a, i) => h("li", { role: "option", "aria-selected": String(i === sel), class: i === sel ? "is-sel" : "", onclick: () => run(a) }, h("strong", {}, a.label), a.sub && h("small", {}, a.sub)))); };
+  const draw = () => { input.setAttribute("aria-activedescendant", shown.length ? `pal-${sel}` : ""); ul.replaceChildren(...shown.map((a, i) => h("li", { id: `pal-${i}`, role: "option", "aria-selected": String(i === sel), class: i === sel ? "is-sel" : "", onclick: () => run(a) }, h("strong", {}, a.label), a.sub && h("small", {}, a.sub)))); };
   const key = (e) => {
     if (e.key === "Escape") { e.preventDefault(); close(); }
     else if (e.key === "ArrowDown") { e.preventDefault(); sel = Math.min(shown.length - 1, sel + 1); draw(); }
     else if (e.key === "ArrowUp") { e.preventDefault(); sel = Math.max(0, sel - 1); draw(); }
+    else if (e.key === "Tab") e.preventDefault(); // el foco queda en el buscador
     else if (e.key === "Enter" && shown[sel]) { e.preventDefault(); run(shown[sel]); }
   };
-  input.addEventListener("input", () => { const q = input.value.trim().toLowerCase(); shown = acts.filter((a) => (a.label + " " + (a.sub || "")).toLowerCase().includes(q)); sel = 0; draw(); });
+  input.addEventListener("input", () => { const q = input.value.trim().toLowerCase(); shown = acts.filter((a) => (a.label + " " + (a.sub || "") + " " + (a.kw || "")).toLowerCase().includes(q)); sel = 0; draw(); });
   const ov = h("div", { class: "modal palette", onclick: (e) => { if (e.target === ov) close(); } }, h("div", { class: "modal__box palette__box", role: "dialog", "aria-modal": "true", "aria-label": "Buscar" }, input, ul));
   document.addEventListener("keydown", key, true); document.body.append(ov); draw(); input.focus();
 }
@@ -299,7 +308,7 @@ function shell(pending) {
 
   undoBtn = h("button", { type: "button", class: "ico ico--top", title: "Deshacer (Ctrl+Z)", "aria-label": "Deshacer", disabled: true, onclick: () => histGo(-1) }, icon("undo", 18));
   redoBtn = h("button", { type: "button", class: "ico ico--top", title: "Rehacer (Ctrl+Shift+Z)", "aria-label": "Rehacer", disabled: true, onclick: () => histGo(1) }, icon("redo", 18));
-  errBar = h("div", { class: "errbar", role: "alert", hidden: true });
+  errBar = h("div", { class: "errbar", role: "status", "aria-live": "polite", hidden: true });
   topEl = h("header", { class: "top" }, h("div", { class: "busybar", "aria-hidden": "true" }), statusEl, h("span", { class: "top__undo" }, undoBtn, redoBtn), h("a", { class: "link", href: "/", target: "_blank", rel: "noopener" }, "Ver la web", icon("external", 16)), discardBtn, saveBtn);
   sideEl = h("aside", { class: "side" }, h("div", { class: "livery", "aria-hidden": "true" }),
     h("div", { class: "side__bar" }, brand(),
@@ -322,6 +331,7 @@ function shell(pending) {
 const limit = (p, ms = 8000) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error("La base de datos tardó demasiado en responder.")), ms))]);
 
 async function boot() {
+  delete document.body.dataset.retry;
   if (!configured) return setupScreen();
   try {
     const session = await limit(getSession());
@@ -359,5 +369,6 @@ addEventListener("keydown", (e) => {
     if (saveBtn?.isConnected && !saveBtn.disabled && !document.querySelector(".modal")) publish();
   } else if (k === "k" && saveBtn?.isConnected && !document.querySelector(".modal")) { e.preventDefault(); palette(); }
 });
+addEventListener("online", () => { if (document.body.dataset.retry) boot(); });
 addEventListener("beforeunload", (e) => { if (isDirty) { stashDraft(); e.preventDefault(); e.returnValue = ""; } });
 boot();
