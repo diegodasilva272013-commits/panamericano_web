@@ -451,3 +451,23 @@ kbd{font:600 11px var(--f-text);padding:3px 7px;border-radius:6px;background:rgb
 @media(max-width:900px){
   .top .state.is-dirty{display:block;grid-column:1/-1;justify-self:stretch;max-width:none;font-size:13px;padding:6px 12px;text-align:center}
 }
+
+/* ---- novena tanda: Textos en acordeón, selector de enlace, paso de 5 minutos ---- */
+.fold{border-top:1px solid var(--line)}
+.fold:first-of-type{border-top:0}
+.fold>summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:72px;padding:18px 0;cursor:pointer}
+.fold>summary::-webkit-details-marker{display:none}
+.fold__t{display:flex;flex-direction:column;gap:2px;min-width:0}
+.fold__t h3{font:700 20px/1.2 var(--f-display);letter-spacing:-.02em}
+.fold__t h3::before{content:"";display:inline-block;width:20px;height:4px;margin-right:10px;vertical-align:middle;background:linear-gradient(var(--accent) 0 2px,var(--red) 2px)}
+.fold__t small{color:var(--muted);font-size:14px}
+.fold__n{flex:none;display:inline-flex;align-items:center;gap:10px;color:var(--muted);font-size:13px;font-weight:600}
+.fold__n::after{content:"";width:9px;height:9px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(-45deg);transition:transform .2s var(--ease)}
+.fold[open]>summary .fold__n::after{transform:rotate(45deg)}
+.fold>summary:hover .fold__t h3{text-decoration:underline;text-underline-offset:4px;text-decoration-color:var(--line-2)}
+.fold__body{display:grid;grid-template-columns:minmax(220px,1fr) minmax(0,2.2fr);gap:clamp(24px,4vw,56px);padding:4px 0 36px}
+.fold__body .tpv{margin-top:0;align-self:start;position:sticky;top:96px}
+.linkx{display:flex;flex-direction:column;gap:12px;margin-top:6px}
+.tb__step{display:flex;gap:8px}
+.tb__step .btn{flex:1;min-height:40px;color:var(--ink)}
+@media(max-width:1000px){.fold__body{grid-template-columns:1fr}.fold__body .tpv{position:static;max-width:none}}

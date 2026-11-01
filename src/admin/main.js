@@ -46,6 +46,8 @@ const histGo = (d) => {
 
 // los errores de red se explican en llano (nunca "TypeError: Failed to fetch")
 const plain = plainErr;
+// "hace 5 min" en vez de una fecha larga (pasado el día, la fecha corta)
+const ago = (d) => { const m = Math.round((Date.now() - +d) / 60000); return m < 1 ? "hace un momento" : m < 60 ? `hace ${m} min` : m < 1440 ? `hace ${Math.round(m / 60)} h` : "el " + fmtShort(d); };
 const mark = '<svg viewBox="0 0 24 24" width="26" height="26"><rect width="24" height="24" rx="7" fill="#f4b400"/><path d="M2 18c7 1 14-3 20-11v5C16 19 9 22 2 21z" fill="#171200"/><path d="M2 21c7 1 14-3 20-11" stroke="#d8261f" stroke-width="2.2" fill="none"/></svg>';
 const brand = () => h("div", { class: "brand", html: mark + "<span>Panamericano</span>" });
 const sectionLabel = (id) => SECTIONS.find((s) => s.id === id)?.label || id;
@@ -158,7 +160,7 @@ function paintStatus() {
   if (!statusEl) return;
   const ch = isDirty ? [...changedSections()] : [];
   statusEl.title = ch.map(sectionLabel).join(", ");
-  statusEl.textContent = isDirty ? (ch.length > 1 ? `Hay cambios sin publicar en ${ch.length} pantallas` : ch.length ? `Hay cambios sin publicar en ${sectionLabel(ch[0])}` : "Hay cambios sin publicar") : lastPub ? `Publicado · ${fmtShort(lastPub)}` : "Todo publicado";
+  statusEl.textContent = isDirty ? (ch.length > 1 ? `Hay cambios sin publicar en ${ch.length} pantallas` : ch.length ? `Hay cambios sin publicar en ${sectionLabel(ch[0])}` : "Hay cambios sin publicar") : lastPub ? `Publicado ${ago(lastPub)}` : "Todo publicado";
   statusEl.className = "state " + (isDirty ? "is-dirty" : "is-ok");
   saveBtn.disabled = !isDirty;
   saveBtn.title = isDirty ? "Guardar y publicar (Ctrl+S)" : "No hay cambios para publicar";
@@ -377,6 +379,7 @@ addEventListener("keydown", (e) => {
     if (saveBtn?.isConnected && !saveBtn.disabled && !document.querySelector(".modal")) publish();
   } else if (k === "k" && saveBtn?.isConnected && !document.querySelector(".modal")) { e.preventDefault(); palette(); }
 });
+setInterval(() => { if (statusEl?.isConnected && !isDirty) paintStatus(); }, 30000);
 addEventListener("online", () => { if (document.body.dataset.retry) boot(); });
 addEventListener("beforeunload", (e) => { if (isDirty) { stashDraft(); e.preventDefault(); e.returnValue = ""; } });
 boot();

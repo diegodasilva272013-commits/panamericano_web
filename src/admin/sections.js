@@ -73,27 +73,56 @@ function departuresBoard(routes) {
 const TEXT_GROUPS = [
   ["Menú superior", "Los nombres de los enlaces de arriba.", [["texts.nav.horarios", "Horarios"], ["texts.nav.destinos", "Destinos"], ["texts.nav.reservar", "Reservar"], ["texts.nav.antes", "Antes de viajar"], ["texts.nav.contacto", "Contacto"]]],
   ["Bloque \"Conectamos caminos\"", "El título grande que aparece después de la portada, con el párrafo y el botón.", [["texts.grid.a", "Título, primera línea (blanca)"], ["texts.grid.b", "Título, segunda línea (amarilla)"], ["texts.grid.text", "Párrafo", true], ["texts.grid.button", "Texto del botón"]]],
-  ["Sección Horarios", "Título y rótulos del tablero de salidas.", [["texts.horarios.a", "Título, primera línea"], ["texts.horarios.b", "Título, segunda línea (gris)"], ["texts.horarios.all", "Subtítulo de \"todas las salidas\""], ["texts.horarios.clock", "Texto junto al reloj"]]],
-  ["Sección Destinos", "", [["texts.destinos.a", "Título, primera línea"], ["texts.destinos.b", "Título, segunda línea (gris)"]]],
-  ["Sección El viaje", "La animación del bus por la Ruta 9.", [["texts.viaje.hint", "Invitación a scrollear"], ["texts.viaje.cta", "Botón del final"]]],
-  ["Sección Reserva", "", [["texts.reservar.a", "Título, primera línea"], ["texts.reservar.b", "Título, segunda línea (gris)"], ["texts.reservar.legal", "Aviso legal (debajo del formulario)", true]]],
-  ["Sección A bordo", "", [["texts.abordo.a", "Título, primera línea"], ["texts.abordo.b", "Título, segunda línea (gris)"]]],
-  ["Sección Antes de viajar", "", [["texts.antes.a", "Título, primera línea"], ["texts.antes.b", "Título, segunda línea (gris)"]]],
-  ["Sección Contacto", "", [["texts.contacto.a", "Título, primera línea"], ["texts.contacto.b", "Título, segunda línea (gris)"], ["texts.contacto.call", "Botón de llamar"], ["texts.contacto.wa", "Botón de WhatsApp"], ["texts.contacto.central", "Rótulo del teléfono central"]]],
+  ["Horarios", "Título y rótulos del tablero de salidas.", [["texts.horarios.a", "Título, primera línea"], ["texts.horarios.b", "Título, segunda línea (gris)"], ["texts.horarios.all", "Subtítulo de \"todas las salidas\""], ["texts.horarios.clock", "Texto junto al reloj"]]],
+  ["Destinos", "", [["texts.destinos.a", "Título, primera línea"], ["texts.destinos.b", "Título, segunda línea (gris)"]]],
+  ["El viaje (la animación del bus)", "La animación del bus por la Ruta 9.", [["texts.viaje.hint", "Invitación a scrollear"], ["texts.viaje.cta", "Botón del final"]]],
+  ["Reservar un pasaje", "", [["texts.reservar.a", "Título, primera línea"], ["texts.reservar.b", "Título, segunda línea (gris)"], ["texts.reservar.legal", "Aviso legal (debajo del formulario)", true]]],
+  ["A bordo", "", [["texts.abordo.a", "Título, primera línea"], ["texts.abordo.b", "Título, segunda línea (gris)"]]],
+  ["Antes de viajar", "", [["texts.antes.a", "Título, primera línea"], ["texts.antes.b", "Título, segunda línea (gris)"]]],
+  ["Contacto", "", [["texts.contacto.a", "Título, primera línea"], ["texts.contacto.b", "Título, segunda línea (gris)"], ["texts.contacto.call", "Botón de llamar"], ["texts.contacto.wa", "Botón de WhatsApp"], ["texts.contacto.central", "Rótulo del teléfono central"]]],
 ];
 
 function textsSection({ draft, dirty }) {
   const wrap = h("div", { class: "stack" });
-  for (const [title, desc, fields] of TEXT_GROUPS) {
+  TEXT_GROUPS.forEach(([title, desc, fields], i) => {
     const pv = textPreview(draft, fields);
-    const g = title === "Menú superior" ? ((t, d, _pv, ...k) => group(t, d, ...k)) : groupAside; // el menú ya se lee en los campos
-    wrap.append(g(title, desc, pv.el, h("div", { class: "grid2" }, fields.map(([path, label, long]) =>
-      field({ label, long, rows: 3, value: get(draft, path), onInput: (v) => { set(draft, path, v); dirty(); pv.update(); } })))));
-  }
+    const grid = h("div", { class: "grid2" }, fields.map(([path, label, long]) =>
+      field({ label, long, rows: 3, value: get(draft, path), onInput: (v) => { set(draft, path, v); dirty(); pv.update(); } })));
+    // un acordeón: se abre una parte de la web por vez (no hay que recorrer ~30 campos seguidos)
+    wrap.append(h("details", { class: "fold", name: "textos", open: i === 0 },
+      h("summary", {}, h("span", { class: "fold__t" }, h("h3", {}, title), desc ? h("small", {}, desc) : null), h("span", { class: "fold__n" }, `${fields.length} campos`)),
+      h("div", { class: "fold__body" }, title === "Menú superior" ? h("div", {}) : pv.el, grid)));
+  });
   wrap.append(group("Franja de datos", "Las frases cortas que aparecen debajo del bloque \"Conectamos caminos\" (por ejemplo \"Todos los días\").",
     listEditor({ id: "facts", items: draft.texts.facts, onChange: dirty, addLabel: "Agregar frase", make: () => "", max: 6, title: (_, i) => `Frase ${i + 1}`,
       render: (it, i) => field({ label: "Texto", value: it, onInput: (v) => { draft.texts.facts[i] = v; dirty(); } }) })));
   return wrap;
+}
+
+/* ---------- a dónde lleva un botón: se elige, no se escribe ---------- */
+const LINKS = [["#horarios", "Horarios"], ["#destinos", "Destinos"], ["#reservar", "Reservar un pasaje"], ["#antes", "Antes de viajar"], ["#contacto", "Contacto"]];
+function linkPicker(c, draft, dirty) {
+  const kind = () => { const v = c.href || ""; return LINKS.some(([x]) => x === v) ? v : /^tel:/.test(v) ? "tel" : /wa\.me\//.test(v) ? "wa" : "web"; };
+  const sel = h("select", { "aria-label": "A dónde lleva el botón" },
+    ...LINKS.map(([v, l]) => h("option", { value: v }, l)),
+    h("option", { value: "wa" }, "El WhatsApp de la empresa"), h("option", { value: "tel" }, "Llamar por teléfono"), h("option", { value: "web" }, "Otra página web"));
+  sel.value = kind();
+  const extra = h("div", { class: "linkx" });
+  const drawExtra = () => {
+    const k = sel.value; extra.replaceChildren();
+    if (k === "web") extra.append(field({ label: "Dirección de la página", value: c.href, mono: true, hint: "Completa, por ejemplo https://www.ejemplo.com", validate: (v) => (/^https?:\/\/\S+\.\S+/.test(v.trim()) ? "" : "Escribila completa, empezando con https://"), onInput: (v) => { c.href = v.trim(); dirty(); } }));
+    if (k === "tel") extra.append(field({ label: "Teléfono", value: String(c.href || "").replace(/^tel:/, ""), mono: true, hint: "Con código de país, por ejemplo +543884254331", validate: (v) => (v.replace(/\D/g, "").length >= 8 ? "" : "Escribí el teléfono completo."), onInput: (v) => { c.href = "tel:" + v.replace(/[^\d+]/g, ""); dirty(); } }));
+  };
+  sel.addEventListener("change", () => {
+    const k = sel.value;
+    if (LINKS.some(([x]) => x === k)) { c.href = k; c.external = false; }
+    else if (k === "wa") { c.href = `https://wa.me/${draft.site.whatsapp}`; c.external = true; }
+    else if (k === "tel") { if (!/^tel:/.test(c.href)) c.href = `tel:${draft.site.phoneTel || ""}`; c.external = false; }
+    else { if (!/^https?:/.test(c.href)) c.href = "https://"; c.external = true; }
+    dirty(); drawExtra();
+  });
+  drawExtra();
+  return h("div", { class: "field" }, h("label", {}, "A dónde lleva el botón"), sel, extra);
 }
 
 /* ---------- hero (textos) ---------- */
@@ -104,12 +133,12 @@ function heroSection(ctx) {
       field({ label: "Titular", value: hero.headline, validate: (v) => (v.trim() ? "" : "Falta el titular. Es la frase grande de la portada."), onInput: (v) => { hero.headline = v; dirty(); } }),
       field({ label: "Bajada", value: hero.subheadline, onInput: (v) => { hero.subheadline = v; dirty(); } }),
       field({ label: "Invitación a scrollear", value: hero.hint, onInput: (v) => { hero.hint = v; dirty(); } }))),
-    group("Botones de la portada", "Los botones debajo del titular. El enlace puede ser una sección (#horarios), una web (https://…) o un teléfono (tel:+54…).",
+    group("Botones de la portada", "Los botones que van debajo del titular. Elegí qué dice cada uno y a dónde lleva.",
       listEditor({ id: "ctas", items: hero.ctas, onChange: dirty, addLabel: "Agregar botón", max: 3, min: 1, make: () => ({ label: "Nuevo botón", href: "#horarios" }), title: (c) => c.label || "Botón",
         render: (c) => h("div", {},
           h("div", { class: "grid2" },
             field({ label: "Texto del botón", value: c.label, onInput: (v) => { c.label = v; dirty(); } }),
-            field({ label: "Enlace", value: c.href, mono: true, onInput: (v) => { c.href = v; dirty(); } })),
+            linkPicker(c, draft, dirty)),
           h("div", { class: "checks" },
             check({ label: "Botón principal (amarillo)", value: c.primary, onChange: (v) => { c.primary = v; dirty(); } }),
             check({ label: "Abre en otra pestaña", value: c.external, onChange: (v) => { c.external = v; dirty(); } }))) })),
@@ -119,7 +148,7 @@ function heroSection(ctx) {
         h("div", { class: "grid3" },
           field({ label: "Título grande", value: e.title, onInput: (v) => { e.title = v; dirty(); } }),
           field({ label: "Detalle", value: e.detail, onInput: (v) => { e.detail = v; dirty(); } }),
-          field({ label: "Rótulo corto (barra inferior)", value: e.rail, onInput: (v) => { e.rail = v; dirty(); } })))))),
+          field({ label: "Nombre corto (se ve abajo, en la barra del recorrido)", value: e.rail, onInput: (v) => { e.rail = v; dirty(); } })))))),
     group("Cierre de la portada", "Lo que aparece al terminar el recorrido de la portada, junto al buscador de horarios.", h("div", { class: "grid2" },
       field({ label: "Título", value: hero.cierre.title, onInput: (v) => { hero.cierre.title = v; dirty(); } }),
       field({ label: "Texto", long: true, rows: 2, value: hero.cierre.text, onInput: (v) => { hero.cierre.text = v; dirty(); } }))),
@@ -178,8 +207,10 @@ function timesBoard(r, onChange, others) {
     const drop = () => undoable(`Quitaste la salida de las ${t}.`, () => { const days = { ...(r.days || {}) }; delete days[t]; setDays(r, days); r.times.splice(i, 1); open = -1; changed(); });
     const keys = (e) => { if (e.key === "Enter") { e.preventDefault(); done(); } else if (e.key === "Escape") { e.stopPropagation(); open = -1; refocus = t; draw(); } };
     [tIn, dIn].forEach((x) => x.addEventListener("keydown", keys));
+    const step = (d) => { const nt = readTime(tIn.value) || t; tIn.value = hhmm(+nt.slice(0, 2) * 60 + +nt.slice(3) + d); pErr.textContent = ""; tIn.focus(); };
     const pop = h("div", { class: "tb__pop", role: "dialog", "aria-label": "Editar salida" },
-      h("label", {}, "Hora", tIn), h("label", {}, "Días (si no sale todos)", dIn), pErr,
+      h("label", {}, "Hora", tIn),
+      h("div", { class: "tb__step" }, h("button", { type: "button", class: "btn btn--ghost", onclick: () => step(-5) }, "−5 min"), h("button", { type: "button", class: "btn btn--ghost", onclick: () => step(5) }, "+5 min")), h("label", {}, "Días (si no sale todos)", dIn), pErr,
       h("div", { class: "tb__popact" },
         h("button", { type: "button", class: "btn btn--primary", onclick: done }, "Listo"),
         h("button", { type: "button", class: "btn btn--ghost", onclick: drop }, icon("x", 16), "Quitar esta hora")));
@@ -338,7 +369,7 @@ function contactSection({ draft, dirty: baseDirty }) {
           field({ label: "Teléfono", value: b.tel, onInput: (v) => { b.tel = v; dirty(); } }),
           field({ label: "Detalle (opcional)", value: b.sub || "", onInput: (v) => { if (v) b.sub = v; else delete b.sub; dirty(); } })) })),
     group("Asistente de voz (avanzado)", "Identificador del agente de ElevenLabs que atiende las llamadas. No lo cambies si no estás seguro.",
-      field({ label: "ID del agente", value: site.agentId, mono: true, onInput: (v) => { site.agentId = v.trim(); dirty(); } })));
+      field({ label: "Código del asistente de voz", help: "Es el código que identifica al asistente que atiende las llamadas desde la web. No lo cambies si no estás seguro.", value: site.agentId, mono: true, onInput: (v) => { site.agentId = v.trim(); dirty(); } })));
 }
 
 /* ---------- preguntas ---------- */
