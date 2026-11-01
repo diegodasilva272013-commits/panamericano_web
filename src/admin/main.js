@@ -1,6 +1,6 @@
 import { configured, getSession, signIn, signOut, isAdmin, fetchRemote, withDefaults, saveContent } from "./api.js";
 import { h, toast, confirmBox, icon, plainErr, hooks, undoToast } from "./ui.js";
-import { SECTIONS, validate, strip, fmtDate, fmtShort, nextDepartures, commitPendingEdit } from "./sections.js";
+import { SECTIONS, KEY2SEC, validate, strip, fmtDate, fmtShort, nextDepartures, commitPendingEdit } from "./sections.js";
 
 const app = document.getElementById("app");
 
@@ -63,7 +63,7 @@ const brand = () => h("div", { class: "brand", html: mark + "<span>Panamericano<
 const sectionLabel = (id) => SECTIONS.find((s) => s.id === id)?.label || id;
 
 /* qué parte de la web cambió respecto de lo publicado */
-const KEY2SEC = { hero: "hero", texts: "textos", site: "contacto", routes: "horarios", destinations: "destinos", gallery: "galeria", boardImage: "galeria", services: "galeria", boleterias: "contacto", faq: "contacto" };
+// (KEY2SEC, el mapa de qué parte de los datos es qué pantalla, viene de sections.js)
 const computeBase = () => { const b = strip(withDefaults(structuredClone(remoteData))); baseJson = Object.fromEntries(Object.keys(KEY2SEC).map((k) => [k, JSON.stringify(b[k])])); };
 const changedSections = () => { const d = strip(draft), s = new Set(); for (const k of Object.keys(KEY2SEC)) if (JSON.stringify(d[k]) !== baseJson[k]) s.add(KEY2SEC[k]); return s; };
 
@@ -214,7 +214,7 @@ const help = (sec) => confirmBox(h("div", { class: "help" },
   sec.desc && h("p", {}, sec.desc),
   h("ol", {}, (sec.help || []).map((s) => h("li", {}, s))),
   h("section", {}, h("strong", {}, "Me equivoqué, ¿puedo volver atrás?"),
-    h("p", {}, "Sí. Tocá \"Deshacer\" (o Ctrl+Z) las veces que quieras. \"Descartar cambios\" deja todo como está publicado, y también se puede deshacer. Si ya publicaste, en \"Versiones anteriores\" cargás cualquier versión vieja."))),
+    h("p", {}, "Sí. Tocá \"Deshacer\" (o Ctrl+Z) las veces que quieras. \"Descartar cambios\" deja todo como está publicado, y también se puede deshacer. Si ya publicaste, en \"Versiones anteriores\" cargás una de las últimas 20 publicaciones."))),
   "Entendido", false);
 
 const shortcuts = () => confirmBox(h("div", { class: "help" },
@@ -242,14 +242,19 @@ function palette() {
   ];
   const KW = { contacto: "teléfono telefono whatsapp boletería boleteria dirección pregunta frecuentes faq", galeria: "foto fotos imagen galería a bordo servicios", hero: "video titular botones portada inicio", textos: "menú titulo título frase texto", horarios: "salida hora horas servicio tablero", destinos: "lugar lugares ciudad pueblo tarjeta", historial: "versión version volver atrás" };
   acts.forEach((a) => { const s = SECTIONS.find((x) => x.label === a.label); if (s) a.kw = KW[s.id] || ""; });
-  let sel = 0, shown = acts;
+  acts.forEach((a) => { a.g = a.sub === "Ayuda" ? "Ayuda" : a.sub === "Destinos" ? "Destinos" : a.label.includes("→") ? "Servicios" : SECTIONS.some((s) => s.label === a.label) ? "Pantallas" : "Acciones"; });
+  let sel = 0, shown = acts.filter((a) => a.g === "Pantallas" || a.g === "Acciones"); // al abrir, solo lo principal; al escribir, todo
   const input = h("input", { type: "text", placeholder: "Escribí a dónde querés ir…", "aria-label": "Buscar pantalla o acción", role: "combobox", "aria-expanded": "true", "aria-controls": "pal-list", "aria-autocomplete": "list" });
   const ul = h("ul", { class: "palette__list", role: "listbox", id: "pal-list" });
   const close = () => { ov.remove(); document.removeEventListener("keydown", key, true); back?.focus?.(); };
   const run = (a) => { close(); a.run(); };
-  const draw = () => { input.setAttribute("aria-activedescendant", shown.length ? `pal-${sel}` : ""); input.setAttribute("aria-expanded", String(shown.length > 0));
+  const drawRaw = () => { input.setAttribute("aria-activedescendant", shown.length ? `pal-${sel}` : ""); input.setAttribute("aria-expanded", String(shown.length > 0));
     if (!shown.length) { ul.replaceChildren(h("li", { class: "palette__none", role: "status" }, `Nada coincide con "${input.value}". Probá con otra palabra.`)); return; }
     ul.replaceChildren(...shown.map((a, i) => h("li", { id: `pal-${i}`, role: "option", "aria-selected": String(i === sel), class: i === sel ? "is-sel" : "", onclick: () => run(a) }, h("strong", {}, a.label), a.sub && h("small", {}, a.sub)))); };
+  const draw = () => {
+    drawRaw(); let prev = null;
+    [...ul.querySelectorAll('li[role="option"]')].forEach((li, i) => { const g = shown[i]?.g; if (g && g !== prev) { ul.insertBefore(h("li", { class: "palette__h", role: "presentation" }, g), li); prev = g; } });
+  };
   const key = (e) => {
     if (e.key === "Escape") { e.preventDefault(); close(); }
     else if (e.key === "ArrowDown") { e.preventDefault(); sel = Math.min(shown.length - 1, sel + 1); draw(); ul.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" }); }
@@ -271,6 +276,7 @@ function shell(pending) {
     rerender: () => draw(),
     goto: (...a) => goto(...a),
     lastPublished: () => lastPub,
+    published: () => remoteData,
     replaceDraft: (data) => { draft = withDefaults(data); setDirty(); draw(); },
   };
   const draw = () => {

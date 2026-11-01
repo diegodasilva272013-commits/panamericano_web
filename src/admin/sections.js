@@ -2,6 +2,8 @@ import { h, field, check, group, groupAside, listEditor, imageField, confirmBox,
 import { listHistory } from "./api.js";
 import { heroVideoTool } from "./hero-video.js";
 
+export const KEY2SEC = { hero: "hero", texts: "textos", site: "contacto", routes: "horarios", destinations: "destinos", gallery: "galeria", boardImage: "galeria", services: "galeria", boleterias: "contacto", faq: "contacto" };
+const changedIds = (a, b) => { const s = new Set(); for (const k of Object.keys(KEY2SEC)) if (JSON.stringify(a?.[k]) !== JSON.stringify(b?.[k])) s.add(KEY2SEC[k]); return [...s]; };
 const get = (o, path) => path.split(".").reduce((a, k) => (a == null ? a : a[k]), o);
 const set = (o, path, v) => { const ks = path.split("."); const last = ks.pop(); ks.reduce((a, k) => (a[k] ??= {}), o)[last] = v; };
 
@@ -29,7 +31,9 @@ const fmtWa = (n) => { const d = String(n || "").replace(/\D/g, ""); return /^54
 function destPreview(items) {
   const el = h("div", { class: "tpv", "aria-label": "Así se ve en la web" });
   const update = () => el.replaceChildren(h("span", { class: "tpv__tag" }, "Así se ve en la web"),
-    ...items.map((d) => h("p", { class: "tpv__p tpv__row" }, h("strong", {}, d.name || "…"), d.tag ? h("em", {}, d.tag) : null)));
+    ...items.map((d) => h("div", { class: "tpv__row tpv__dest" },
+      d.image ? h("img", { src: d.image, alt: "", loading: "lazy" }) : h("span", { class: "tpv__ph" }),
+      h("span", { class: "tpv__dtxt" }, h("strong", {}, d.name || "…"), d.tag ? h("em", {}, d.tag) : null))));
   update();
   return { el, update };
 }
@@ -126,11 +130,31 @@ function linkPicker(c, draft, dirty, after) {
   return h("div", { class: "field" }, h("label", {}, "A dónde lleva el botón"), sel, extra);
 }
 
+/* ---------- más vistas previas: la cosa real, no un formulario ---------- */
+function heroPreview(hero) {
+  const el = h("div", { class: "tpv tpv--hero", "aria-label": "Así se ve en la web" });
+  const update = () => el.replaceChildren(h("span", { class: "tpv__tag" }, "Así se ve en la web"),
+    h("p", { class: "tpv__t" }, hero.headline || "…"), h("p", { class: "tpv__p" }, hero.subheadline || ""),
+    h("div", { class: "tpv__btns" }, ...(hero.ctas || []).map((c) => h("span", { class: "tpv__btn" + (c.primary ? "" : " is-ghost") }, c.label || "…"))),
+    hero.hint ? h("p", { class: "tpv__p tpv__hint" }, hero.hint) : null);
+  update();
+  return { el, update };
+}
+function galleryPreview(items) {
+  const el = h("div", { class: "tpv", "aria-label": "Así se ve en la web" });
+  const update = () => el.replaceChildren(h("span", { class: "tpv__tag" }, `La galería · ${items.length} fotos`),
+    h("div", { class: "gp" }, ...items.map((g) => h("div", { class: "gp__c" }, g.src ? h("img", { src: g.src, alt: "", loading: "lazy" }) : h("span", {}, "Sin foto"), g.caption ? h("small", {}, g.caption) : null))));
+  update();
+  return { el, update };
+}
+
 /* ---------- hero (textos) ---------- */
 function heroSection(ctx) {
-  const { draft, dirty } = ctx; const hero = draft.hero;
+  const { draft, dirty: baseDirty } = ctx; const hero = draft.hero;
+  const hpv = heroPreview(hero);
+  const dirty = () => { baseDirty(); hpv.update(); };
   return h("div", { class: "stack" },
-    group("Titular de entrada", "Lo primero que se ve al abrir la web.", h("div", { class: "grid2" },
+    groupAside("Titular de entrada", "Lo primero que se ve al abrir la web.", hpv.el, h("div", { class: "grid2" },
       field({ label: "Titular", value: hero.headline, validate: (v) => (v.trim() ? "" : "Falta el titular. Es la frase grande de la portada."), onInput: (v) => { hero.headline = v; dirty(); } }),
       field({ label: "Frase debajo del titular", value: hero.subheadline, onInput: (v) => { hero.subheadline = v; dirty(); } }),
       field({ label: "Invitación a scrollear", value: hero.hint, onInput: (v) => { hero.hint = v; dirty(); } }))),
@@ -351,12 +375,14 @@ function galleryStatus(n) {
   if (n % 3) return { ok: false, msg: `Hay ${n} fotos. Para que la grilla quede completa tiene que ser un múltiplo de 3: agregá ${3 - (n % 3)} más o quitá ${n % 3}.` };
   return { ok: true, msg: `${n} fotos: la grilla queda completa.` };
 }
-function gallerySection({ draft, dirty }) {
+function gallerySection({ draft, dirty: baseDirty }) {
+  const gpv = galleryPreview(draft.gallery);
+  const dirty = () => { baseDirty(); gpv.update(); };
   const status = h("p", { class: "status" });
   const upd = () => { const s = galleryStatus(draft.gallery.length); status.textContent = s.msg; status.className = "status " + (s.ok ? "is-ok" : "is-bad"); };
   upd();
   return h("div", { class: "stack" },
-    group("Galería animada de la web", "Son las fotos que entran y se agrandan en el bloque \"Conectamos caminos\". Tienen que ser un múltiplo de 3 (6, 9, 12 o 15).", status,
+    groupAside("Galería animada de la web", "Son las fotos que entran y se agrandan en el bloque \"Conectamos caminos\". Tienen que ser un múltiplo de 3 (6, 9, 12 o 15).", gpv.el, status,
       listEditor({ id: "gallery", items: draft.gallery, onChange: () => { upd(); dirty(); }, addLabel: "Agregar foto", max: 15, min: 6, title: (g, i) => g.caption || `Foto ${i + 1}`, sub: (g, i) => `N.º ${i + 1}`,
         make: () => ({ src: "", caption: "" }),
         render: (g) => h("div", { class: "split" },
@@ -408,18 +434,23 @@ function faqSection({ draft, dirty }) {
 }
 
 /* ---------- historial ---------- */
-function historySection({ draft, replaceDraft }) {
+function historySection({ draft, replaceDraft, published }) {
   const box = h("div", { class: "list" }, h("p", { class: "empty" }, "Cargando…"));
   listHistory().then((rows) => {
     box.replaceChildren();
     if (!rows.length) return box.append(h("p", { class: "empty" }, "Todavía no hay versiones anteriores. Aparecen acá cada vez que guardás."));
-    rows.forEach((r) => box.append(h("div", { class: "item item--row" },
-      h("div", {}, h("strong", {}, new Date(r.saved_at).toLocaleString("es-AR", { dateStyle: "long", timeStyle: "short" })), h("small", { class: "hint" }, "Versión anterior de la web")),
+    rows.forEach((r, i) => {
+      // cada fila guarda cómo estaba la web antes de esa publicación: se compara con la versión que la reemplazó
+      const newer = i === 0 ? published?.() : rows[i - 1].data;
+      const labs = newer ? changedIds(r.data, newer).map((id) => SECTIONS.find((x) => x.id === id)?.label || id) : [];
+      box.append(h("div", { class: "item item--row" },
+      h("div", {}, h("strong", {}, new Date(r.saved_at).toLocaleString("es-AR", { dateStyle: "long", timeStyle: "short" })), h("small", { class: "hint" }, labs.length ? `Esa publicación cambió: ${labs.join(", ")}` : "Publicación sin cambios de contenido")),
       h("button", { type: "button", class: "btn btn--ghost", onclick: async () => {
         if (await confirmBox("Se va a cargar esta versión en el editor. No se publica hasta que toques \"Guardar y publicar\". ¿Seguir?", "Cargar versión")) { replaceDraft(r.data); toast("Versión cargada en el editor. Revisala y guardá para publicarla."); }
-      } }, "Cargar en el editor"))));
+      } }, "Cargar en el editor")));
+    });
   }).catch((e) => { box.replaceChildren(h("p", { class: "err" }, e.message)); });
-  return h("div", { class: "stack" }, group("Versiones anteriores", "Las últimas versiones publicadas. Si algo salió mal, podés volver atrás.", box));
+  return h("div", { class: "stack" }, group("Versiones anteriores", "Las últimas 20 publicaciones. Cada una dice qué cambió: cargala en el editor para volver a como estaba.", box));
 }
 
 /* ---------- resumen: lo que le sirve al dueño al entrar ---------- */
@@ -427,6 +458,7 @@ export const fmtDate = (d) => new Date(d).toLocaleString("es-AR", { dateStyle: "
 
 function summarySection({ draft, goto, lastPublished }) {
   const errs = validate(draft);
+  const lost = draft.destinations.filter((d) => d.name?.trim() && !knownPlace(draft, d.name));
   const nd = nextDepartures(draft.routes, 4);
   const board = h("div", { class: "board" }, nd.list.length
     ? nd.list.map((x, i) => h("div", { class: "board__line" + (i === 0 ? " is-next" : "") },
@@ -447,7 +479,9 @@ function summarySection({ draft, goto, lastPublished }) {
       errs.length
         ? h("div", {}, h("p", { class: "status is-bad" }, `Hay ${errs.length} ${errs.length === 1 ? "cosa" : "cosas"} por revisar antes de publicar:`),
           h("ul", { class: "errs" }, errs.map((x) => h("li", {}, h("span", {}, x.msg), h("button", { type: "button", class: "link", onclick: () => goto(x.sec, x) }, "Ir ahí", icon("arrow", 14))))))
-        : h("p", { class: "okline" }, icon("check", 18), "No hay nada pendiente de revisar.")));
+        : h("p", { class: "okline" }, icon("check", 18), "No hay nada pendiente de revisar."),
+      lost.length ? h("div", { class: "softlist" }, h("p", { class: "warn" }, `Revisar (no impide publicar): ${lost.length === 1 ? "el destino" : "los destinos"} ${lost.map((d) => d.name).join(", ")} no ${lost.length === 1 ? "coincide" : "coinciden"} con ninguna parada de Horarios.`),
+        h("button", { type: "button", class: "link", onclick: () => goto("destinos") }, "Ir a Destinos", icon("arrow", 14))) : null));
 }
 
 /* varias pantallas en una: junta las secciones de cada una */
@@ -455,8 +489,8 @@ const together = (...fns) => (ctx) => h("div", { class: "stack" }, fns.flatMap((
 
 export const SECTIONS = [
   { id: "resumen", label: "Resumen", group: "Inicio", desc: "Lo que pasa hoy en tu web.", help: ["Mirá las próximas salidas: son las que el pasajero ve ahora.", "Tocá \"Cambiar un horario\" para editar las salidas.", "Cuando termines, tocá \"Guardar y publicar\" (o Ctrl+S)."], render: summarySection },
-  { id: "hero", label: "Portada y video", group: "Portada", desc: "El titular, los botones y el video de la primera pantalla.", help: ["Cambiá el titular y los botones de arriba.", "Para un video nuevo, subí un video por cada etapa del viaje, en orden.", "Generá el video, revisá la vista previa y tocá \"Usar este video\".", "Guardá y publicá."], render: heroSection },
-  { id: "textos", label: "Textos de la web", group: "Portada", desc: "Menú, títulos y frases de cada parte de la web.", help: ["Buscá la parte de la web que querés cambiar.", "Escribí el texto nuevo.", "Guardá y publicá."], render: textsSection },
+  { id: "hero", label: "Portada y video", group: "La web", desc: "El titular, los botones y el video de la primera pantalla.", help: ["Cambiá el titular y los botones de arriba.", "Para un video nuevo, subí un video por cada etapa del viaje, en orden.", "Generá el video, revisá la vista previa y tocá \"Usar este video\".", "Guardá y publicá."], render: heroSection },
+  { id: "textos", label: "Textos de la web", group: "La web", desc: "Menú, títulos y frases de cada parte de la web.", help: ["Buscá la parte de la web que querés cambiar.", "Escribí el texto nuevo.", "Guardá y publicá."], render: textsSection },
   { id: "horarios", label: "Horarios de salida", group: "Viajes", desc: "Las salidas que ve el pasajero. Tocá una hora para cambiarla.", help: ["Buscá el servicio en la lista.", "Tocá una hora para cambiarla o quitarla. Para sumar, escribí la hora abajo (podés pegar varias).", "En \"Correr o copiar horarios\" podés correr todas las horas, copiarlas de otro servicio o poner los días de todas.", "Guardá y publicá. Si te equivocás, tocá \"Deshacer\"."], render: routesSection },
   { id: "destinos", label: "Destinos", group: "Viajes", desc: "Los lugares a los que viaja la empresa.", help: ["Elegí la foto con \"Cambiar imagen\": se achica sola.", "Corregí el nombre y la descripción.", "El nombre tiene que ser igual a una parada de Horarios.", "Guardá y publicá."], render: destinationsSection },
   { id: "galeria", label: "Fotos", group: "Contenido", desc: "Fotos de la galería animada y de \"A bordo\".", help: ["Cambiá una foto con \"Cambiar imagen\": se achica sola.", "La galería necesita 6, 9, 12 o 15 fotos.", "Guardá y publicá."], render: together(gallerySection, boardSection) },
