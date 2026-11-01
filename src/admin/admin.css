@@ -226,7 +226,7 @@ img{display:block;max-width:100%}
 }
 
 /* franja del bus en el aviso */
-.modal__box::before{content:"";position:absolute;inset:0 0 auto 0;height:5px;background:linear-gradient(var(--accent) 0 3px,var(--red) 3px)}
+.stripe{height:5px;margin:-36px -28px -8px;flex:none;background:linear-gradient(var(--accent) 0 3px,var(--red) 3px)}
 .modal__box .help{display:flex;flex-direction:column;gap:18px}
 .help h3{font:700 22px var(--f-display);letter-spacing:-.02em}
 .help section{display:flex;flex-direction:column;gap:6px}
@@ -237,9 +237,9 @@ img{display:block;max-width:100%}
 .btn--xl{min-height:56px;padding:0 28px;font-size:17px;border-radius:14px;align-self:flex-start}
 .actions{display:flex;flex-direction:column;gap:18px}
 .actions__more{display:flex;flex-direction:column;border-top:1px solid var(--line)}
-.morelink{display:flex;align-items:center;gap:12px;min-height:52px;padding:0 4px;border-bottom:1px solid var(--line);font-weight:600;color:var(--ink);text-align:left;transition:padding .2s var(--ease),background .2s}
+.morelink{display:flex;align-items:center;gap:12px;min-height:52px;padding:0 4px;border-bottom:1px solid var(--line);font-weight:600;color:var(--ink);text-align:left;transition:background .2s var(--ease)}
 .morelink .i:last-child{margin-left:auto;color:var(--muted);transition:transform .2s var(--ease)}
-.morelink:hover{padding-left:10px}.morelink:hover .i:last-child{transform:translateX(3px);color:var(--ink)}
+.morelink:hover{background:var(--soft)}.morelink:hover .i:last-child{transform:translateX(3px);color:var(--ink)}
 .okline{display:flex;align-items:center;gap:10px;color:var(--ok);font-weight:600}
 .board__line{display:grid;grid-template-columns:96px minmax(0,1fr);align-items:center;gap:16px;padding:16px 20px;background:var(--dark-2);color:#f3efe6}
 .board__time{font:700 24px ui-monospace,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;letter-spacing:-.02em}

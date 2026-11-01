@@ -64,6 +64,7 @@ export function confirmBox(msg, okLabel = "Aceptar", cancelLabel = "Cancelar") {
     const cancel = cancelLabel === false ? null : h("button", { class: "btn btn--ghost", type: "button", onclick: () => done(false) }, cancelLabel);
     const ov = h("div", { class: "modal", onclick: (e) => { if (e.target === ov) done(false); } },
       h("div", { class: "modal__box", role: "dialog", "aria-modal": "true", "aria-label": typeof msg === "string" ? msg : "Aviso" },
+        h("div", { class: "stripe", "aria-hidden": "true" }),
         h("div", { class: "modal__msg" }, msg),
         h("div", { class: "modal__act" }, cancel, h("button", { class: "btn", type: "button", onclick: () => done(true) }, okLabel))));
     document.addEventListener("keydown", key, true);
