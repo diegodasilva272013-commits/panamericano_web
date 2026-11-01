@@ -1,6 +1,6 @@
 import { configured, getSession, signIn, signOut, isAdmin, fetchRemote, withDefaults, saveContent } from "./api.js";
 import { h, toast, confirmBox, icon } from "./ui.js";
-import { SECTIONS, validate, strip, fmtDate, nextDepartures } from "./sections.js";
+import { SECTIONS, validate, strip, fmtDate, fmtShort, nextDepartures } from "./sections.js";
 
 const app = document.getElementById("app");
 
@@ -14,20 +14,31 @@ const DRAFT_KEY = "pm-admin-draft";
 
 let user = null, draft = null, remoteData = null, lastPub = null, isDirty = false, current = store.get("pm-admin-section") || "resumen";
 let saveBtn, discardBtn, statusEl, topEl, sideEl, navEl, goto, redraw, stashTimer, paintTimer, histTimer, baseJson = {};
-let undoBtn, redoBtn, errBar, showErrBar = false;
+let undoBtn, redoBtn, errBar, showErrBar = true, histRestored = false; // la barra de errores se muestra siempre que falte algo
 
 /* historial de cambios del borrador: deshacer y rehacer de todo, no solo de lo que se quita */
 let hist = [], hi = -1;
 const snapNow = () => JSON.stringify(strip(draft));
-const paintUndo = () => { if (undoBtn) { undoBtn.disabled = hi <= 0; redoBtn.disabled = hi >= hist.length - 1; } };
-const histReset = () => { hist = [snapNow()]; hi = 0; paintUndo(); };
-const histPush = () => { const s = snapNow(); if (s !== hist[hi]) { hist = hist.slice(0, hi + 1); hist.push(s); if (hist.length > 100) hist.shift(); hi = hist.length - 1; paintUndo(); } };
+const HIST_KEY = "pm-admin-hist";
+// qué pantallas cambiaron entre dos pasos del historial (para decir qué deshace cada botón)
+const secLabelsBetween = (a, b) => { try { const x = JSON.parse(a), y = JSON.parse(b), s = new Set(); for (const k of Object.keys(KEY2SEC)) if (JSON.stringify(x[k]) !== JSON.stringify(y[k])) s.add(sectionLabel(KEY2SEC[k])); return [...s].join(", "); } catch { return ""; } };
+const paintUndo = () => {
+  if (!undoBtn) return;
+  undoBtn.disabled = hi <= 0; redoBtn.disabled = hi >= hist.length - 1;
+  const u = hi > 0 ? secLabelsBetween(hist[hi - 1], hist[hi]) : "", r = hi < hist.length - 1 ? secLabelsBetween(hist[hi], hist[hi + 1]) : "";
+  undoBtn.title = u ? `Deshacer el último cambio en ${u} (Ctrl+Z)` : "Deshacer (Ctrl+Z)";
+  redoBtn.title = r ? `Rehacer el cambio en ${r} (Ctrl+Shift+Z)` : "Rehacer (Ctrl+Shift+Z)";
+};
+// el historial sobrevive a recargar la página (últimos 20 pasos)
+const histSave = () => { const n = Math.max(0, hist.length - 20); store.set(HIST_KEY, JSON.stringify({ u: user?.id, b: lastPub ? +lastPub : 0, hist: hist.slice(n), hi: hi - n })); };
+const histReset = () => { hist = [snapNow()]; hi = 0; paintUndo(); histSave(); };
+const histPush = () => { const s = snapNow(); if (s !== hist[hi]) { hist = hist.slice(0, hi + 1); hist.push(s); if (hist.length > 100) hist.shift(); hi = hist.length - 1; paintUndo(); histSave(); } };
 const histGo = (d) => {
   clearTimeout(histTimer); histPush(); // lo último que escribiste entra al historial antes de volver
   const j = hi + d; if (j < 0 || j >= hist.length) return;
   hi = j; draft = withDefaults(JSON.parse(hist[hi])); isDirty = changedSections().size > 0;
   clearTimeout(stashTimer); if (isDirty) stashDraft(); else store.del(DRAFT_KEY);
-  redraw(); paintStatus(); paintUndo();
+  redraw(); paintStatus(); paintUndo(); histSave();
 };
 
 const mark = '<svg viewBox="0 0 24 24" width="26" height="26"><rect width="24" height="24" rx="7" fill="#f4b400"/><path d="M2 18c7 1 14-3 20-11v5C16 19 9 22 2 21z" fill="#171200"/><path d="M2 21c7 1 14-3 20-11" stroke="#d8261f" stroke-width="2.2" fill="none"/></svg>';
@@ -91,6 +102,25 @@ function loginScreen(error) {
   email.focus();
 }
 
+function retryScreen(msg) {
+  app.replaceChildren(entry([
+    h("h1", {}, "No pudimos cargar el panel"),
+    h("p", { class: "lead" }, "Revisá tu conexión a internet y probá de nuevo. Tus cambios sin publicar no se pierden."),
+    h("p", { class: "err", role: "alert" }, msg),
+    h("button", { class: "btn", type: "button", onclick: () => boot() }, "Reintentar"),
+  ]));
+}
+
+// la primera vez que se entra: tres cosas para saber (se puede saltar)
+function welcome() {
+  if (store.get("pm-admin-welcome")) return;
+  store.set("pm-admin-welcome", "1");
+  confirmBox(h("div", { class: "help" }, h("h3", {}, "Bienvenida"), h("p", {}, "Tres cosas para saber:"),
+    h("ol", {}, h("li", {}, "Elegí qué querés cambiar en el menú, o escribilo en el buscador (Ctrl K)."),
+      h("li", {}, "Hacé el cambio. A la izquierda ves cómo queda en la web."),
+      h("li", {}, "Tocá \"Guardar y publicar\". Si te equivocás, \"Deshacer\" está arriba."))), "Empezar", "Saltar");
+}
+
 function deniedScreen(email) {
   app.replaceChildren(entry([
     h("h1", {}, "Sin permiso"),
@@ -111,7 +141,7 @@ const setDirty = () => {
 function paintErrBar() {
   if (!errBar) return;
   const errs = showErrBar ? validate(draft) : [];
-  if (!errs.length) { showErrBar = false; errBar.hidden = true; errBar.replaceChildren(); return; }
+  if (!errs.length) { errBar.hidden = true; errBar.replaceChildren(); return; }
   errBar.hidden = false;
   errBar.replaceChildren(h("strong", {}, `Faltan ${errs.length} ${errs.length === 1 ? "dato" : "datos"} para publicar:`),
     h("span", { class: "errbar__list" }, errs.slice(0, 4).map((x) => h("button", { type: "button", class: "link", onclick: () => goto(x.sec, x) }, x.msg.replace(/\.$/, ""), icon("arrow", 14))),
@@ -120,7 +150,7 @@ function paintErrBar() {
 function paintStatus() {
   if (!statusEl) return;
   const ch = isDirty ? [...changedSections()] : [];
-  statusEl.textContent = isDirty ? (ch.length ? `Hay cambios sin publicar en ${ch.map(sectionLabel).join(", ")}` : "Hay cambios sin publicar") : lastPub ? `Publicado · ${fmtDate(lastPub)}` : "Todo publicado";
+  statusEl.textContent = isDirty ? (ch.length ? `Hay cambios sin publicar en ${ch.map(sectionLabel).join(", ")}` : "Hay cambios sin publicar") : lastPub ? `Publicado · ${fmtShort(lastPub)}` : "Todo publicado";
   statusEl.className = "state " + (isDirty ? "is-dirty" : "is-ok");
   saveBtn.disabled = !isDirty;
   saveBtn.title = isDirty ? "Guardar y publicar (Ctrl+S)" : "No hay cambios para publicar";
@@ -128,7 +158,7 @@ function paintStatus() {
   navEl?.querySelectorAll("button[data-id]").forEach((b) => b.classList.toggle("has-changes", ch.includes(b.dataset.id)));
   paintErrBar();
 }
-const saveLabel = () => saveBtn.replaceChildren(h("span", { class: "lbl-dirty" }, "Guardar y publicar"), h("span", { class: "lbl-clean" }, "Todo publicado"));
+const saveLabel = () => saveBtn.replaceChildren(h("span", { class: "lbl-dirty" }, "Guardar y publicar", h("kbd", { class: "kbd-inline" }, "Ctrl S")), h("span", { class: "lbl-clean" }, "Todo publicado"));
 
 async function publish() {
   const errors = validate(draft);
@@ -143,9 +173,9 @@ async function publish() {
   saveBtn.disabled = true; saveBtn.textContent = "Publicando…"; topEl.classList.add("is-busy");
   try {
     await saveContent(strip(draft), user.id);
-    remoteData = strip(draft); lastPub = new Date(); computeBase(); store.del(DRAFT_KEY); clearTimeout(stashTimer);
+    remoteData = strip(draft); lastPub = new Date(); computeBase(); histSave(); store.del(DRAFT_KEY); clearTimeout(stashTimer);
     isDirty = false; paintStatus(); toast("Publicado. La web ya muestra los cambios.");
-  } catch (e) { toast(e.message, "err", 9000); saveBtn.disabled = false; }
+  } catch (e) { toast(`No se pudo publicar: ${e.message}`, "err", 12000, { label: "Reintentar", icon: "redo", run: () => publish() }); saveBtn.disabled = false; }
   finally { saveLabel(); topEl.classList.remove("is-busy"); paintStatus(); }
 }
 
@@ -252,16 +282,18 @@ function shell(pending) {
 
   statusEl = h("span", { class: "state", role: "status" });
   saveBtn = h("button", { class: "btn btn--primary", type: "button", onclick: publish }); saveLabel();
-  discardBtn = h("button", { class: "btn btn--ghost", type: "button", hidden: true, onclick: async () => {
-    if (!(await confirmBox("Se pierden todos los cambios que no publicaste y vuelve lo que está hoy en la web. ¿Descartarlos?", "Descartar"))) return;
-    draft = withDefaults(structuredClone(remoteData)); isDirty = false; clearTimeout(stashTimer); store.del(DRAFT_KEY); showErrBar = false; histReset(); paintStatus(); draw(); toast("Cambios descartados.");
+  discardBtn = h("button", { class: "btn btn--ghost", type: "button", hidden: true, onclick: () => {
+    // sin pregunta: se descarta y queda a mano "Deshacer"
+    const prev = snapNow();
+    draft = withDefaults(structuredClone(remoteData)); isDirty = false; clearTimeout(stashTimer); store.del(DRAFT_KEY); clearTimeout(histTimer); histPush(); paintStatus(); draw();
+    toast("Descartaste los cambios sin publicar.", "ok", 9000, { label: "Deshacer", run: () => { draft = withDefaults(JSON.parse(prev)); isDirty = true; stashDraft(); histPush(); paintStatus(); draw(); } });
   } }, "Descartar cambios");
 
   // borrador de una sesión anterior que no se llegó a publicar
   const recover = pending && h("div", { class: "recover", role: "alert" },
     h("span", {}, `Tenés cambios sin publicar del ${fmtDate(pending.at)}, guardados en este navegador.`),
     h("span", { class: "recover__act" },
-      h("button", { type: "button", class: "btn btn--ghost", onclick: () => { store.del(DRAFT_KEY); recover.remove(); } }, "Descartarlos"),
+      h("button", { type: "button", class: "btn btn--ghost", onclick: () => { store.del(DRAFT_KEY); histReset(); recover.remove(); } }, "Descartarlos"),
       h("button", { type: "button", class: "btn", onclick: () => { draft = withDefaults(pending.data); setDirty(); recover.remove(); draw(); } }, "Recuperarlos")));
   // (el historial arranca en lo publicado; al recuperar, el borrador entra como un cambio más)
 
@@ -282,26 +314,36 @@ function shell(pending) {
           isDirty = false; store.del(DRAFT_KEY); await signOut(); await boot();
         } }, icon("logout", 17), "Cerrar sesión"))));
   app.replaceChildren(h("div", { class: "layout" }, sideEl, h("div", { class: "content" }, topEl, errBar, recover || null, main)));
-  histReset(); draw(); paintStatus();
+  if (!histRestored) histReset();
+  histRestored = false; draw(); paintStatus(); paintUndo(); welcome();
 }
+
+// si la base no responde, no quedarse en "Cargando…": mostrar "Reintentar"
+const limit = (p, ms = 8000) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error("La base de datos tardó demasiado en responder.")), ms))]);
 
 async function boot() {
   if (!configured) return setupScreen();
   try {
-    const session = await getSession();
+    const session = await limit(getSession());
     if (!session) return loginScreen();
     user = session.user;
-    if (!(await isAdmin(user.id))) return deniedScreen(user.email);
-    const remote = await fetchRemote();
+    if (!(await limit(isAdmin(user.id)))) return deniedScreen(user.email);
+    const remote = await limit(fetchRemote());
     remoteData = remote?.data ?? null; lastPub = remote?.updated_at ? new Date(remote.updated_at) : null;
     draft = withDefaults(structuredClone(remoteData)); isDirty = false; // copia: editar el borrador no debe tocar lo publicado
     computeBase();
     let pending = null;
     try { pending = JSON.parse(store.get(DRAFT_KEY) || "null"); } catch { pending = null; }
     if (!pending || pending.user !== user.id || JSON.stringify(pending.data) === JSON.stringify(strip(draft))) { if (pending) store.del(DRAFT_KEY); pending = null; }
+    // si había un historial guardado de esta misma versión, se recupera (deshacer sigue funcionando tras recargar)
+    histRestored = false;
+    try {
+      const st = JSON.parse(store.get(HIST_KEY) || "null"), cur = pending ? JSON.stringify(pending.data) : snapNow();
+      if (st && st.u === user.id && st.b === (lastPub ? +lastPub : 0) && st.hist?.length > 1 && st.hist[st.hi] === cur) { hist = st.hist; hi = st.hi; histRestored = true; }
+    } catch { /* sin historial guardado */ }
     shell(pending);
   } catch (e) {
-    loginScreen(e.message);
+    retryScreen(e.message);
   }
 }
 
@@ -311,7 +353,7 @@ addEventListener("keydown", (e) => {
   if (e.key === "?" && !typing() && saveBtn?.isConnected && !document.querySelector(".modal")) { e.preventDefault(); shortcuts(); return; }
   if (!(e.ctrlKey || e.metaKey)) return;
   const k = e.key.toLowerCase();
-  if (k === "z" && saveBtn?.isConnected && !typing() && !document.querySelector(".modal")) { e.preventDefault(); histGo(e.shiftKey ? 1 : -1); return; } // dentro de un campo, Ctrl+Z deshace el texto
+  if (k === "z" && saveBtn?.isConnected && !document.querySelector(".modal") && !e.isComposing) { e.preventDefault(); histGo(e.shiftKey ? 1 : -1); return; } // un solo deshacer para todo, también dentro de los campos
   if (k === "s") {
     e.preventDefault();
     if (saveBtn?.isConnected && !saveBtn.disabled && !document.querySelector(".modal")) publish();

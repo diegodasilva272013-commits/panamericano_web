@@ -52,7 +52,7 @@ export function toast(msg, kind = "ok", ms = 3200, action) {
   toastBox.querySelectorAll(".toast").forEach((o) => o.remove()); // un solo aviso a la vez: el nuevo reemplaza al anterior
   const close = () => { t.classList.add("is-out"); setTimeout(() => t.remove(), 300); };
   const t = h("div", { class: `toast toast--${kind}`, title: "Tocá para cerrar", onclick: () => close() }, h("span", {}, msg),
-    action && h("button", { type: "button", class: "toast__act", onclick: () => { action.run(); close(); } }, icon("undo", 15), action.label));
+    action && h("button", { type: "button", class: "toast__act", onclick: (e) => { e.stopPropagation(); action.run(); close(); } }, icon(action.icon || "undo", 15), action.label));
   toastBox.append(t);
   setTimeout(close, action ? Math.max(ms, 8000) : ms);
 }
@@ -83,13 +83,17 @@ export function confirmBox(msg, okLabel = "Aceptar", cancelLabel = "Cancelar") {
 // ---------- campos ----------
 let uid = 0;
 // validate(valor) -> texto del problema o "": se muestra al salir del campo, no recién al publicar
-export function field({ label, hint, value, onInput, long, type = "text", placeholder, rows = 3, mono, error, list, validate }) {
+// help: explicación corta que se abre con un "?" junto a la etiqueta (para los campos que no se entienden solos)
+export function field({ label, hint, help, value, onInput, long, type = "text", placeholder, rows = 3, mono, error, list, validate }) {
   const id = `f${++uid}`;
   const input = long
     ? h("textarea", { id, rows, placeholder, class: mono ? "mono" : "" }, value ?? "")
     : h("input", { id, type, placeholder, list, value: value ?? "", class: mono ? "mono" : "" });
   const err = h("small", { class: "err", role: "alert" }, error || "");
-  const box = h("div", { class: "field" + (error ? " is-bad" : "") }, h("label", { for: id }, label), input, hint && h("small", { class: "hint" }, hint), err);
+  const note = help ? h("small", { class: "fhelp", hidden: true }, help) : null;
+  const q = help ? h("button", { type: "button", class: "qmark", title: "¿Qué es esto?", "aria-label": `¿Qué es "${label}"?`, "aria-expanded": "false",
+    onclick: () => { note.hidden = !note.hidden; q.setAttribute("aria-expanded", String(!note.hidden)); } }, "?") : null;
+  const box = h("div", { class: "field" + (error ? " is-bad" : "") }, h("label", { for: id }, label, q), note, input, hint && h("small", { class: "hint" }, hint), err);
   const verify = () => { const m = validate ? validate(input.value) : ""; err.textContent = m || ""; box.classList.toggle("is-bad", !!m); input.setAttribute("aria-invalid", m ? "true" : "false"); };
   input.addEventListener("input", () => { onInput(input.value, input); if (box.classList.contains("is-bad")) verify(); });
   if (validate) input.addEventListener("blur", verify);
