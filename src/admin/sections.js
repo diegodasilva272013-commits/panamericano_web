@@ -65,9 +65,9 @@ function heroSection(ctx) {
           h("div", { class: "checks" },
             check({ label: "Botón principal (amarillo)", value: c.primary, onChange: (v) => { c.primary = v; dirty(); } }),
             check({ label: "Abre en otra pestaña", value: c.external, onChange: (v) => { c.external = v; dirty(); } }))) })),
-    group("Textos de cada tramo del viaje", hero.frames ? "Cada tramo corresponde a uno de los videos que se subieron. Para agregar o quitar tramos, subí el video de nuevo (abajo)." : "Cada tramo corresponde a uno de los 5 videos originales. Para cambiar la cantidad de tramos, subí un video nuevo (abajo).",
+    group("Textos de cada etapa del viaje", hero.frames ? "Cada etapa corresponde a uno de los videos que se subieron. Para agregar o quitar etapas, subí el video de nuevo (abajo)." : "Cada etapa corresponde a uno de los 5 videos originales. Para cambiar la cantidad de etapas, subí un video nuevo (abajo).",
       h("div", { class: "list" }, hero.etapas.map((e, i) => h("div", { class: "item" },
-        h("div", { class: "item__bar" }, h("strong", {}, `Tramo ${i + 1}`)),
+        h("div", { class: "item__bar" }, h("strong", {}, `Etapa ${i + 1}`)),
         h("div", { class: "grid3" },
           field({ label: "Título grande", value: e.title, onInput: (v) => { e.title = v; dirty(); } }),
           field({ label: "Detalle", value: e.detail, onInput: (v) => { e.detail = v; dirty(); } }),
@@ -78,37 +78,76 @@ function heroSection(ctx) {
     heroVideoTool(ctx));
 }
 
-/* ---------- vista previa del tablero de salidas ---------- */
-function boardPreview(routes) {
-  const el = h("div", { class: "board" });
-  const nowMin = () => {
-    const p = new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Jujuy", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date());
-    const g = (t) => +p.find((x) => x.type === t).value;
-    return (g("hour") % 24) * 60 + g("minute");
+/* ---------- horarios: el tablero de salidas ES el editor ---------- */
+const nowMin = () => {
+  const p = new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Jujuy", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date());
+  const g = (t) => +p.find((x) => x.type === t).value;
+  return (g("hour") % 24) * 60 + g("minute");
+};
+// las próximas salidas de todos los servicios, con la hora de Jujuy
+export function nextDepartures(routes, n = 4) {
+  const now = nowMin();
+  const all = routes.flatMap((r) => (r.times || []).map((t) => ({ t, m: +t.slice(0, 2) * 60 + +t.slice(3), r }))).sort((a, b) => a.m - b.m);
+  const next = all.filter((x) => x.m >= now);
+  return { list: (next.length ? next : all).slice(0, n), tomorrow: !next.length };
+}
+const setDays = (r, days) => { if (Object.keys(days).length) r.days = days; else delete r.days; };
+
+// Horas como fichas sobre el tablero oscuro: se toca una para cambiar la hora o los días, o para quitarla.
+function timesBoard(r, onChange) {
+  const chips = h("div", { class: "tb__chips" });
+  const count = h("small", { class: "tb__count" });
+  const err = h("small", { class: "err" });
+  const ta = h("textarea", { rows: 3, class: "mono", "aria-label": "Horarios escritos a mano" }, timesToText(r));
+  let open = -1;
+
+  const changed = () => { r._bad = undefined; r.times = [...new Set(r.times)].sort(); ta.value = timesToText(r); err.textContent = ""; onChange(); draw(); };
+  const chip = (t, i) => {
+    if (open !== i) {
+      return h("button", { type: "button", class: "tb__chip", title: "Tocá para cambiar la hora o quitarla", onclick: () => { open = i; draw(); } },
+        t, r.days?.[t] && h("em", {}, r.days[t]));
+    }
+    const tIn = h("input", { type: "time", value: t, "aria-label": "Hora de salida" });
+    const dIn = h("input", { type: "text", value: r.days?.[t] || "", placeholder: "Todos los días", "aria-label": "Días en que sale (ejemplo: mar · jue · vie)" });
+    const done = () => {
+      if (!tIn.value) return;
+      const days = { ...(r.days || {}) }; delete days[t];
+      const d = dIn.value.replace(/[()]/g, "").trim();
+      r.times[i] = tIn.value; if (d) days[tIn.value] = d;
+      setDays(r, days); open = -1; changed();
+    };
+    const drop = () => { const days = { ...(r.days || {}) }; delete days[t]; setDays(r, days); r.times.splice(i, 1); open = -1; changed(); };
+    [tIn, dIn].forEach((x) => x.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); done(); } else if (e.key === "Escape") { open = -1; draw(); } }));
+    return h("span", { class: "tb__edit" }, tIn, dIn,
+      h("button", { type: "button", class: "btn btn--primary", onclick: done }, "Listo"),
+      h("button", { type: "button", class: "ico ico--del", title: "Quitar esta hora", "aria-label": "Quitar esta hora", onclick: drop }, icon("x", 16)));
   };
-  const update = () => {
-    const now = nowMin();
-    el.replaceChildren(...routes.map((r) => {
-      const all = (r.times || []).map((t) => ({ t, m: +t.slice(0, 2) * 60 + +t.slice(3) })).sort((a, b) => a.m - b.m);
-      const next = all.filter((x) => x.m >= now), shown = (next.length ? next : all).slice(0, 5);
-      return h("div", { class: "board__row" },
-        h("div", { class: "board__route" }, h("strong", {}, `${r.from || "Origen"} → ${r.to || "Destino"}`), r.service && h("span", {}, r.service)),
-        h("div", { class: "board__times" }, shown.length
-          ? shown.map((x, i) => h("span", { class: "board__t" + (i === 0 && next.length ? " is-next" : "") }, x.t, r.days?.[x.t] ? "*" : ""))
-          : h("em", {}, "Sin horarios")),
-        h("small", {}, next.length ? "Próximas salidas de hoy" : "Primeras salidas de mañana"));
-    }));
-    if (!routes.length) el.append(h("p", { class: "empty" }, "Todavía no hay servicios."));
+
+  const addIn = h("input", { type: "time", "aria-label": "Nueva hora de salida" });
+  const add = () => { if (!addIn.value) return; r.times.push(addIn.value); addIn.value = ""; changed(); };
+  addIn.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); add(); } });
+
+  ta.addEventListener("input", () => {
+    const p = parseTimes(ta.value);
+    if (!p.bad.length) { r.times = p.times; setDays(r, p.days || {}); r._bad = undefined; err.textContent = ""; }
+    else { r._bad = p.bad; err.textContent = `No se entiende: ${p.bad.join(", ")}. Formato: 06:15, 09:00`; }
+    onChange(); draw();
+  });
+
+  const draw = () => {
+    chips.replaceChildren(...(r.times.length ? r.times.map(chip) : [h("em", { class: "tb__empty" }, "Todavía no hay horarios. Agregá el primero con el botón de abajo.")]));
+    count.textContent = `${r.times.length} ${r.times.length === 1 ? "salida" : "salidas"} por día`;
   };
-  update();
-  return { el, update };
+  draw();
+  return h("div", { class: "tb" }, chips,
+    h("div", { class: "tb__add" }, addIn, h("button", { type: "button", class: "btn btn--primary", onclick: add }, icon("plus", 16), "Agregar hora"), count),
+    h("details", { class: "adv" }, h("summary", {}, "Escribirlos a mano (avanzado)"), ta,
+      h("small", { class: "hint" }, "Separados por coma. Si una salida va solo ciertos días: 14:15 (mar · jue · vie)."), err));
 }
 
 /* ---------- horarios ---------- */
-function routesSection({ draft, dirty: baseDirty }) {
+function routesSection({ draft, dirty }) {
   const routes = draft.routes;
-  let preview;
-  const dirty = () => { baseDirty(); preview?.update(); };
   const origins = () => [...new Set(routes.map((r) => r.from).filter(Boolean))];
   const dl = h("datalist", { id: "origins-dl" }, origins().map((o) => h("option", { value: o })));
   const list = listEditor({
@@ -116,28 +155,18 @@ function routesSection({ draft, dirty: baseDirty }) {
     addLabel: "Agregar servicio", empty: "No hay servicios cargados.",
     make: () => ({ id: "r" + Math.random().toString(36).slice(2, 7), from: origins()[0] || "", to: "", via: "", service: "", stops: [], times: [], note: "" }),
     title: (r) => `${r.from || "Origen"} → ${r.to || "Destino"}${r.service ? " · " + r.service : ""}`,
-    render: (r) => {
-      const err = h("small", { class: "err" }); const cnt = h("small", { class: "hint" });
-      const showTimes = (bad) => { err.textContent = bad.length ? `No se entiende: ${bad.join(", ")}. Formato: 06:15, 09:00` : ""; cnt.textContent = `${r.times.length} salidas por día`; r._bad = bad.length ? bad : undefined; };
-      const ta = h("textarea", { id: "t" + Math.random().toString(36).slice(2, 6), rows: 4, class: "mono" }, timesToText(r));
-      ta.addEventListener("input", () => { const p = parseTimes(ta.value); if (!p.bad.length) { r.times = p.times; r.days = p.days; if (!p.days) delete r.days; } showTimes(p.bad); dirty(); });
-      showTimes([]);
-      return h("div", {},
-        h("div", { class: "grid2" },
-          field({ label: "Sale desde (origen)", value: r.from, hint: "Elegí uno existente o escribí uno nuevo.", list: "origins-dl", onInput: (v) => { r.from = v; dirty(); } }),
-          field({ label: "Nombre del servicio", value: r.service, hint: "Por ejemplo: Ruta 9", onInput: (v) => { r.service = v; dirty(); } }),
-          field({ label: "Destino final (se ve en el tablero)", value: r.to, hint: "Podés terminar con * si no todas las salidas llegan hasta ahí.", onInput: (v) => { r.to = v; dirty(); } }),
-          field({ label: "Pasando por", value: r.via, onInput: (v) => { r.via = v; dirty(); } })),
-        field({ label: "Paradas, en orden de viaje", value: stopsToText(r), long: true, rows: 2, hint: "Separadas por coma. Son los lugares a los que se puede viajar con este servicio.", onInput: (v) => { r.stops = parseStops(v); dirty(); } }),
-        h("div", { class: "field" }, h("label", {}, "Horarios de salida"), ta,
-          h("small", { class: "hint" }, "Separados por coma. Si una salida solo va ciertos días, agregalo entre paréntesis: 14:15 (mar · jue · vie)."), cnt, err),
-        field({ label: "Nota (se muestra debajo)", long: true, rows: 2, value: r.note, onInput: (v) => { r.note = v; dirty(); } }));
-    },
+    render: (r) => h("div", {},
+      h("div", { class: "grid2" },
+        field({ label: "Sale desde (origen)", value: r.from, hint: "Elegí uno existente o escribí uno nuevo.", list: "origins-dl", onInput: (v) => { r.from = v; dirty(); } }),
+        field({ label: "Nombre del servicio", value: r.service, hint: "Por ejemplo: Ruta 9", onInput: (v) => { r.service = v; dirty(); } }),
+        field({ label: "Destino final (se ve en el tablero)", value: r.to, hint: "Podés terminar con * si no todas las salidas llegan hasta ahí.", onInput: (v) => { r.to = v; dirty(); } }),
+        field({ label: "Pasa por", value: r.via, onInput: (v) => { r.via = v; dirty(); } })),
+      field({ label: "Paradas, en orden de viaje", value: stopsToText(r), long: true, rows: 2, hint: "Separadas por coma. Son los lugares a los que se puede viajar con este servicio.", onInput: (v) => { r.stops = parseStops(v); dirty(); } }),
+      h("div", { class: "field" }, h("label", {}, "Horarios de salida"), timesBoard(r, dirty)),
+      field({ label: "Nota (se muestra debajo)", long: true, rows: 2, value: r.note, onInput: (v) => { r.note = v; dirty(); } })),
   });
-  preview = boardPreview(routes);
   return h("div", { class: "stack" }, dl,
-    group("Así se ve en la web", "El tablero de salidas con lo que estás escribiendo. Se actualiza solo mientras editás.", preview.el),
-    group("Servicios y horarios", "Cada servicio es un origen, sus paradas y sus horarios de salida. El tablero y el buscador de la web se arman solos con esto.", list));
+    group("Servicios y horarios", "Cómo se cambia un horario: 1) elegí el servicio. 2) Tocá una hora para cambiarla o quitarla, o agregá una nueva. 3) Guardá y publicá. El tablero y el buscador de la web se arman solos.", list));
 }
 
 /* ---------- destinos ---------- */
@@ -166,7 +195,7 @@ function gallerySection({ draft, dirty }) {
   const upd = () => { const s = galleryStatus(draft.gallery.length); status.textContent = s.msg; status.className = "status " + (s.ok ? "is-ok" : "is-bad"); };
   upd();
   return h("div", { class: "stack" },
-    group("Fotos de la grilla animada", "Son las fotos que entran y se agrandan en el bloque \"Conectamos caminos\". Tienen que ser un múltiplo de 3 (6, 9, 12 o 15).", status,
+    group("Galería animada de la web", "Son las fotos que entran y se agrandan en el bloque \"Conectamos caminos\". Tienen que ser un múltiplo de 3 (6, 9, 12 o 15).", status,
       listEditor({ items: draft.gallery, onChange: () => { upd(); dirty(); }, addLabel: "Agregar foto", max: 15, min: 6, title: (g, i) => g.caption || `Foto ${i + 1}`,
         make: () => ({ src: "", caption: "" }),
         render: (g) => h("div", { class: "split" },
@@ -230,30 +259,36 @@ function historySection({ draft, replaceDraft }) {
   return h("div", { class: "stack" }, group("Versiones anteriores", "Las últimas versiones publicadas. Si algo salió mal, podés volver atrás.", box));
 }
 
-/* ---------- resumen: estado de cada parte de la web ---------- */
-function summarySection({ draft, goto }) {
+/* ---------- resumen: lo que le sirve al dueño al entrar ---------- */
+export const fmtDate = (d) => new Date(d).toLocaleString("es-AR", { dateStyle: "long", timeStyle: "short" });
+
+function summarySection({ draft, goto, lastPublished }) {
   const errs = validate(draft);
-  const info = {
-    hero: () => `${draft.hero.etapas.length} tramos del recorrido`,
-    textos: () => "Menú y títulos de cada sección",
-    horarios: () => `${draft.routes.length} servicios · ${draft.routes.reduce((n, r) => n + (r.times?.length || 0), 0)} salidas por día`,
-    destinos: () => `${draft.destinations.length} destinos`,
-    galeria: () => `${draft.gallery.length} fotos`,
-    abordo: () => `${draft.services.length} servicios a bordo`,
-    contacto: () => `${draft.boleterias.length} boleterías · WhatsApp ${draft.site.whatsapp || "sin cargar"}`,
-    preguntas: () => `${draft.faq.length} preguntas`,
-  };
-  const rows = SECTIONS.filter((s) => info[s.id]).map((s) => {
-    const n = errs.filter((e) => e.sec === s.id).length;
-    return h("button", { type: "button", class: "sumrow", onclick: () => goto(s.id) },
-      icon(s.id), h("span", { class: "sumrow__t" }, h("strong", {}, s.label), h("small", {}, info[s.id]())),
-      h("span", { class: "pill " + (n ? "is-warn" : "is-ok") }, icon(n ? "alert" : "check", 15), n ? `${n} por revisar` : "Todo en orden"),
-      icon("arrow", 18));
-  });
-  return h("div", { class: "stack" }, group("Estado de la web",
-    errs.length ? `Hay ${errs.length} ${errs.length === 1 ? "cosa" : "cosas"} por revisar antes de publicar. Tocá una fila para ir directo.` : "Todo está en orden. Elegí qué parte querés editar.",
-    h("div", { class: "sumlist" }, rows)));
+  const nd = nextDepartures(draft.routes, 4);
+  const board = h("div", { class: "board" }, nd.list.length
+    ? nd.list.map((x, i) => h("div", { class: "board__line" + (i === 0 ? " is-next" : "") },
+      h("span", { class: "board__time" }, x.t, x.r.days?.[x.t] ? "*" : ""),
+      h("span", { class: "board__dest" }, h("strong", {}, `${x.r.from || "Origen"} → ${x.r.to || "Destino"}`), x.r.service && h("small", {}, x.r.service))))
+    : h("p", { class: "empty" }, "Todavía no hay horarios cargados."));
+  const more = (label, id, ico) => h("button", { type: "button", class: "morelink", onclick: () => goto(id) }, icon(ico, 18), label, icon("arrow", 16));
+  const lp = lastPublished();
+  return h("div", { class: "stack" },
+    group(nd.tomorrow ? "Primeras salidas de mañana" : "Próximas salidas", "Así las ve el pasajero ahora mismo en la web.", board),
+    group("¿Qué querés hacer?", "", h("div", { class: "actions" },
+      h("button", { type: "button", class: "btn btn--primary btn--xl", onclick: () => goto("horarios") }, icon("horarios", 20), "Cambiar un horario"),
+      h("div", { class: "actions__more" },
+        more("Subir o cambiar una foto", "galeria", "galeria"),
+        more("Cambiar un texto de la web", "textos", "textos"),
+        more("Cambiar el video de la portada", "hero", "hero")))),
+    group("Estado", lp ? `Última publicación: ${fmtDate(lp)}.` : "Todavía no se publicó nada desde el panel.",
+      errs.length
+        ? h("div", {}, h("p", { class: "status is-bad" }, `Hay ${errs.length} ${errs.length === 1 ? "cosa" : "cosas"} por revisar antes de publicar:`),
+          h("ul", { class: "errs" }, errs.map((x) => h("li", {}, h("span", {}, x.msg), h("button", { type: "button", class: "link", onclick: () => goto(x.sec, x) }, "Ir ahí", icon("arrow", 14))))))
+        : h("p", { class: "okline" }, icon("check", 18), "No hay nada pendiente de revisar.")));
 }
+
+/* varias pantallas en una: junta las secciones de cada una */
+const together = (...fns) => (ctx) => h("div", { class: "stack" }, fns.flatMap((f) => [...f(ctx).children]));
 
 export const SECTIONS = [
   { id: "resumen", label: "Resumen", group: "Inicio", render: summarySection },
@@ -261,10 +296,8 @@ export const SECTIONS = [
   { id: "textos", label: "Textos de la web", group: "Portada", render: textsSection },
   { id: "horarios", label: "Horarios de salida", group: "Viajes", render: routesSection },
   { id: "destinos", label: "Destinos", group: "Viajes", render: destinationsSection },
-  { id: "galeria", label: "Fotos de la grilla", group: "Fotos", render: gallerySection },
-  { id: "abordo", label: "A bordo", group: "Fotos", render: boardSection },
-  { id: "contacto", label: "Contacto y boleterías", group: "Pasajeros", render: contactSection },
-  { id: "preguntas", label: "Preguntas frecuentes", group: "Pasajeros", render: faqSection },
+  { id: "galeria", label: "Fotos", group: "Contenido", render: together(gallerySection, boardSection) },
+  { id: "contacto", label: "Contacto y preguntas", group: "Contenido", render: together(contactSection, faqSection) },
   { id: "historial", label: "Versiones anteriores", group: "Avanzado", render: historySection },
 ];
 
@@ -282,8 +315,8 @@ export function validate(d) {
     if (r._bad) add("horarios", `${n}: hay horarios mal escritos (${r._bad.join(", ")}).`, { ...at, field: "Horarios de salida" });
     else if (!r.times?.length) add("horarios", `${n}: agregá al menos un horario.`, { ...at, field: "Horarios de salida" });
   });
-  const g = galleryStatus(d.gallery.length); if (!g.ok) add("galeria", "Fotos de la grilla: " + g.msg);
-  d.gallery.forEach((x, i) => { if (!x.src) add("galeria", `Fotos de la grilla: a la foto ${i + 1} le falta la imagen.`, { item: i }); });
+  const g = galleryStatus(d.gallery.length); if (!g.ok) add("galeria", "Galería: " + g.msg);
+  d.gallery.forEach((x, i) => { if (!x.src) add("galeria", `Galería: a la foto ${i + 1} le falta la imagen.`, { item: i }); });
   d.destinations.forEach((x, i) => {
     if (!x.name?.trim()) add("destinos", `Destinos: al destino ${i + 1} le falta el nombre.`, { item: i, field: "Nombre" });
     if (!x.image) add("destinos", `Destinos: a "${x.name || i + 1}" le falta la foto.`, { item: i });
@@ -293,7 +326,7 @@ export function validate(d) {
   });
   if (!/^\d{10,15}$/.test(d.site.whatsapp)) add("contacto", "Contacto: el WhatsApp tiene que tener entre 10 y 15 números (con código de país).", { field: "WhatsApp" });
   const fi = d.faq.findIndex((f) => !(f[0]?.trim() && f[1]?.trim()));
-  if (fi >= 0) add("preguntas", "Preguntas: hay preguntas o respuestas vacías.", { item: fi, field: d.faq[fi][0]?.trim() ? "Respuesta" : "Pregunta" });
+  if (fi >= 0) add("contacto", "Preguntas: hay preguntas o respuestas vacías.", { item: fi, field: d.faq[fi][0]?.trim() ? "Respuesta" : "Pregunta" });
   if (!d.hero.headline?.trim()) add("hero", "Portada: falta el titular.", { field: "Titular" });
   const ci = d.hero.ctas.findIndex((c) => !(c.label?.trim() && c.href?.trim()));
   if (ci >= 0) add("hero", "Portada: hay botones sin texto o sin enlace.", { item: ci, field: "Texto del botón" });

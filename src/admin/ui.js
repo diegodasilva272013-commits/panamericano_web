@@ -48,7 +48,7 @@ export function toast(msg, kind = "ok", ms = 4200) {
   toastBox.append(t);
   setTimeout(() => { t.classList.add("is-out"); setTimeout(() => t.remove(), 300); }, ms);
 }
-export function confirmBox(msg, okLabel = "Aceptar") {
+export function confirmBox(msg, okLabel = "Aceptar", cancelLabel = "Cancelar") {
   return new Promise((res) => {
     const back = document.activeElement;
     const done = (v) => { document.removeEventListener("keydown", key, true); ov.remove(); back?.focus?.(); res(v); };
@@ -61,9 +61,9 @@ export function confirmBox(msg, okLabel = "Aceptar") {
         if (e.shiftKey && i <= 0) { e.preventDefault(); f.at(-1).focus(); } else if (!e.shiftKey && i === f.length - 1) { e.preventDefault(); f[0].focus(); }
       }
     };
-    const cancel = h("button", { class: "btn btn--ghost", type: "button", onclick: () => done(false) }, "Cancelar");
+    const cancel = cancelLabel === false ? null : h("button", { class: "btn btn--ghost", type: "button", onclick: () => done(false) }, cancelLabel);
     const ov = h("div", { class: "modal", onclick: (e) => { if (e.target === ov) done(false); } },
-      h("div", { class: "modal__box", role: "dialog", "aria-modal": "true" },
+      h("div", { class: "modal__box", role: "dialog", "aria-modal": "true", "aria-label": typeof msg === "string" ? msg : "Aviso" },
         h("div", { class: "modal__msg" }, msg),
         h("div", { class: "modal__act" }, cancel, h("button", { class: "btn", type: "button", onclick: () => done(true) }, okLabel))));
     document.addEventListener("keydown", key, true);

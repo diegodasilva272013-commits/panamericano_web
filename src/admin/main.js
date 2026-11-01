@@ -1,6 +1,6 @@
 import { configured, getSession, signIn, signOut, isAdmin, fetchRemote, withDefaults, saveContent } from "./api.js";
 import { h, toast, confirmBox, icon } from "./ui.js";
-import { SECTIONS, validate, strip } from "./sections.js";
+import { SECTIONS, validate, strip, fmtDate } from "./sections.js";
 
 const app = document.getElementById("app");
 
@@ -12,7 +12,7 @@ const store = {
 };
 const DRAFT_KEY = "pm-admin-draft";
 
-let user = null, draft = null, remoteData = null, isDirty = false, current = store.get("pm-admin-section") || "resumen";
+let user = null, draft = null, remoteData = null, lastPub = null, isDirty = false, current = store.get("pm-admin-section") || "resumen";
 let saveBtn, discardBtn, statusEl, goto, stashTimer;
 
 const mark = '<svg viewBox="0 0 24 24" width="26" height="26"><rect width="24" height="24" rx="7" fill="#f4b400"/><path d="M2 18c7 1 14-3 20-11v5C16 19 9 22 2 21z" fill="#171200"/><path d="M2 21c7 1 14-3 20-11" stroke="#d8261f" stroke-width="2.2" fill="none"/></svg>';
@@ -73,9 +73,10 @@ const setDirty = () => {
 };
 function paintStatus() {
   if (!statusEl) return;
-  statusEl.textContent = isDirty ? "Hay cambios sin publicar" : "Todo publicado";
+  statusEl.textContent = isDirty ? "Hay cambios sin publicar" : lastPub ? `Publicado · ${fmtDate(lastPub)}` : "Todo publicado";
   statusEl.className = "state " + (isDirty ? "is-dirty" : "is-ok");
   saveBtn.disabled = !isDirty;
+  saveBtn.title = isDirty ? "Guardar y publicar (Ctrl+S)" : "No hay cambios para publicar";
   discardBtn.hidden = !isDirty;
 }
 
@@ -84,18 +85,30 @@ async function publish() {
   if (errors.length) {
     const list = h("ul", { class: "errs" }, errors.map((x) => h("li", {},
       h("span", {}, x.msg),
-      h("button", { type: "button", class: "link", onclick: () => { document.querySelector(".modal .btn:last-child")?.click(); goto(x.sec, x); } }, "Ir ahí", icon("arrow", 14)))));
-    await confirmBox(h("div", {}, h("strong", {}, `Antes de publicar, revisá ${errors.length === 1 ? "esto" : "estas " + errors.length + " cosas"}:`), list), "Entendido");
+      h("button", { type: "button", class: "link", onclick: () => { document.querySelector(".modal .btn--ghost")?.click(); goto(x.sec, x); } }, "Ir ahí", icon("arrow", 14)))));
+    const first = errors[0];
+    if (await confirmBox(h("div", {}, h("strong", {}, `Antes de publicar, revisá ${errors.length === 1 ? "esto" : "estas " + errors.length + " cosas"}:`), list), "Ir al primer error", "Seguir editando")) goto(first.sec, first);
     return;
   }
   saveBtn.disabled = true; saveBtn.textContent = "Publicando…";
   try {
     await saveContent(strip(draft), user.id);
-    remoteData = strip(draft); store.del(DRAFT_KEY); clearTimeout(stashTimer);
+    remoteData = strip(draft); lastPub = new Date(); store.del(DRAFT_KEY); clearTimeout(stashTimer);
     isDirty = false; paintStatus(); toast("Publicado. La web ya muestra los cambios.");
   } catch (e) { toast(e.message, "err", 9000); saveBtn.disabled = false; }
   finally { saveBtn.textContent = "Guardar y publicar"; }
 }
+
+// ayuda: los tres trabajos de todos los días, en pocas palabras
+const help = () => confirmBox(h("div", { class: "help" },
+  h("h3", {}, "¿Cómo hago…?"),
+  h("section", {}, h("strong", {}, "Cambiar un horario"),
+    h("ol", {}, h("li", {}, "Entrá a \"Horarios de salida\" y buscá el servicio."), h("li", {}, "Tocá la hora que querés cambiar: podés corregirla o quitarla. Para sumar una, usá \"Agregar hora\"."), h("li", {}, "Tocá \"Guardar y publicar\" (o Ctrl+S)."))),
+  h("section", {}, h("strong", {}, "Subir o cambiar una foto"),
+    h("ol", {}, h("li", {}, "Entrá a \"Fotos\" o \"Destinos\" y elegí la imagen."), h("li", {}, "Tocá \"Cambiar imagen\": se achica y optimiza sola."), h("li", {}, "Guardá y publicá."))),
+  h("section", {}, h("strong", {}, "Me equivoqué, ¿puedo volver atrás?"),
+    h("p", {}, "Sí. Antes de publicar, \"Descartar cambios\" deja todo como estaba. Si ya publicaste, en \"Versiones anteriores\" cargás cualquier versión vieja."))),
+  "Entendido", false);
 
 function shell(pending) {
   const main = h("div", { class: "main" });
@@ -104,6 +117,7 @@ function shell(pending) {
     dirty: setDirty,
     rerender: () => draw(),
     goto: (...a) => goto(...a),
+    lastPublished: () => lastPub,
     replaceDraft: (data) => { draft = withDefaults(data); setDirty(); draw(); },
   };
   const draw = () => {
@@ -122,7 +136,10 @@ function shell(pending) {
     if (field) {
       const lab = [...scope.querySelectorAll("label")].find((l) => l.textContent.trim().toLowerCase().startsWith(field.toLowerCase()));
       const box = lab?.closest(".field");
-      if (box) { target = box; box.querySelector("input,textarea")?.focus({ preventScroll: true }); }
+      if (box) {
+        target = box; box.querySelector("input,textarea")?.focus({ preventScroll: true });
+        box.classList.add("is-bad"); box.addEventListener("input", () => box.classList.remove("is-bad"), { once: true });
+      }
     }
     target.scrollIntoView({ block: "center", behavior: "smooth" });
     target.classList.add("is-flash"); setTimeout(() => target.classList.remove("is-flash"), 2400);
@@ -154,7 +171,10 @@ function shell(pending) {
 
   app.replaceChildren(h("div", { class: "layout" },
     h("aside", { class: "side" }, h("div", { class: "livery", "aria-hidden": "true" }), brand(), nav,
-      h("div", { class: "side__foot" }, h("small", {}, user.email), h("button", { type: "button", class: "link", onclick: async () => {
+      h("div", { class: "side__foot" }, h("small", {}, user.email),
+        h("button", { type: "button", class: "link", onclick: help }, icon("preguntas", 17), "Ayuda"),
+        h("a", { class: "link only-m", href: "/", target: "_blank", rel: "noopener" }, icon("external", 16), "Ver la web"),
+        h("button", { type: "button", class: "link", onclick: async () => {
         if (isDirty && !(await confirmBox("Hay cambios sin publicar. Si salís se pierden. ¿Salir igual?", "Salir"))) return;
         isDirty = false; store.del(DRAFT_KEY); await signOut(); await boot();
       } }, icon("logout", 17), "Cerrar sesión"))),
@@ -173,7 +193,7 @@ async function boot() {
     user = session.user;
     if (!(await isAdmin(user.id))) return deniedScreen(user.email);
     const remote = await fetchRemote();
-    remoteData = remote?.data ?? null;
+    remoteData = remote?.data ?? null; lastPub = remote?.updated_at ? new Date(remote.updated_at) : null;
     draft = withDefaults(structuredClone(remoteData)); isDirty = false; // copia: editar el borrador no debe tocar lo publicado
     let pending = null;
     try { pending = JSON.parse(store.get(DRAFT_KEY) || "null"); } catch { pending = null; }
