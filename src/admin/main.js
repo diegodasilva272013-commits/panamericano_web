@@ -1,5 +1,5 @@
 import { configured, getSession, signIn, signOut, isAdmin, fetchRemote, withDefaults, saveContent } from "./api.js";
-import { h, toast, confirmBox, icon, plainErr } from "./ui.js";
+import { h, toast, confirmBox, icon, plainErr, hooks } from "./ui.js";
 import { SECTIONS, validate, strip, fmtDate, fmtShort, nextDepartures } from "./sections.js";
 
 const app = document.getElementById("app");
@@ -36,6 +36,7 @@ const histPush = () => { const s = snapNow(); if (s !== hist[hi]) { hist = hist.
 const histGo = (d) => {
   clearTimeout(histTimer); histPush(); // lo último que escribiste entra al historial antes de volver
   const j = hi + d; if (j < 0 || j >= hist.length) return;
+  document.querySelectorAll(".toast").forEach((t) => t.remove()); // los "Deshacer" de los avisos quedan viejos: no deshacer de más
   hi = j; draft = withDefaults(JSON.parse(hist[hi])); isDirty = changedSections().size > 0;
   clearTimeout(stashTimer); if (isDirty) stashDraft(); else store.del(DRAFT_KEY);
   const fields = () => [...document.querySelectorAll(".main input, .main textarea")];
@@ -48,6 +49,7 @@ const histGo = (d) => {
 const plain = plainErr;
 // "hace 5 min" en vez de una fecha larga (pasado el día, la fecha corta)
 const ago = (d) => { const m = Math.round((Date.now() - +d) / 60000); return m < 1 ? "hace un momento" : m < 60 ? `hace ${m} min` : m < 1440 ? `hace ${Math.round(m / 60)} h` : "el " + fmtShort(d); };
+hooks.undo = () => histGo(-1);
 const mark = '<svg viewBox="0 0 24 24" width="26" height="26"><rect width="24" height="24" rx="7" fill="#f4b400"/><path d="M2 18c7 1 14-3 20-11v5C16 19 9 22 2 21z" fill="#171200"/><path d="M2 21c7 1 14-3 20-11" stroke="#d8261f" stroke-width="2.2" fill="none"/></svg>';
 const brand = () => h("div", { class: "brand", html: mark + "<span>Panamericano</span>" });
 const sectionLabel = (id) => SECTIONS.find((s) => s.id === id)?.label || id;
@@ -101,7 +103,7 @@ function loginScreen(error) {
   const form = h("form", { class: "login", onsubmit: async (e) => {
     e.preventDefault(); err.textContent = ""; btn.disabled = true; btn.textContent = "Entrando…";
     try { await signIn(email.value.trim(), pass.value); await boot(); }
-    catch (x) { err.textContent = x.message; btn.disabled = false; btn.textContent = "Entrar"; }
+    catch (x) { err.textContent = plain(x); btn.disabled = false; btn.textContent = "Entrar"; }
   } },
     h("div", { class: "field" }, h("label", { for: "em" }, "Email"), email),
     h("div", { class: "field" }, h("label", { for: "pw" }, "Contraseña"), pass), err, btn);
@@ -124,7 +126,7 @@ function welcome(force) {
   if (!force && store.get("pm-admin-welcome")) return;
   store.set("pm-admin-welcome", "1");
   confirmBox(h("div", { class: "help" }, h("h3", {}, "Bienvenida"), h("p", {}, "Tres cosas para saber:"),
-    h("ol", {}, h("li", {}, "Elegí qué querés cambiar en el menú, o escribilo en el buscador (Ctrl K)."),
+    h("ol", {}, h("li", {}, "Elegí qué querés cambiar en el menú o en el buscador (en la computadora: Ctrl K)."),
       h("li", {}, "Hacé el cambio. A la izquierda ves cómo queda en la web."),
       h("li", {}, "Tocá \"Guardar y publicar\". Si te equivocás, \"Deshacer\" está arriba."))), "Empezar", "Saltar");
 }
@@ -152,9 +154,10 @@ function paintErrBar() {
   const sig = errs.map((x) => x.msg).join("|"); if (sig === errBar.dataset.sig) return; errBar.dataset.sig = sig; // no se vuelve a dibujar (ni anunciar) si no cambió
   if (!errs.length) { errBar.hidden = true; errBar.replaceChildren(); return; }
   errBar.hidden = false;
+  const x = errs[0];
   errBar.replaceChildren(h("strong", {}, `Faltan ${errs.length} ${errs.length === 1 ? "dato" : "datos"} para publicar:`),
-    h("span", { class: "errbar__list" }, errs.slice(0, 4).map((x) => h("button", { type: "button", class: "link", onclick: () => goto(x.sec, x) }, x.msg.replace(/\.$/, ""), icon("arrow", 14))),
-      errs.length > 4 ? h("small", {}, `y ${errs.length - 4} más`) : null));
+    h("span", { class: "errbar__list" }, h("button", { type: "button", class: "link", onclick: () => goto(x.sec, x) }, x.msg.replace(/\.$/, ""), icon("arrow", 14)),
+      errs.length > 1 ? h("button", { type: "button", class: "link", onclick: () => publish() }, `Ver los ${errs.length}`) : null));
 }
 function paintStatus() {
   if (!statusEl) return;
@@ -183,8 +186,11 @@ async function publish() {
   }
   saveBtn.disabled = true; saveBtn.textContent = "Publicando…"; topEl.classList.add("is-busy");
   try {
-    await saveContent(strip(draft), user.id);
-    remoteData = strip(draft); lastPub = new Date(); computeBase(); histSave(); store.del(DRAFT_KEY); clearTimeout(stashTimer);
+    const cur = await limit(fetchRemote()); // ¿otra persona publicó mientras editabas?
+    if (cur?.updated_at && lastPub && Math.abs(new Date(cur.updated_at) - lastPub) > 2000
+      && !(await confirmBox(`Otra persona publicó cambios el ${fmtShort(cur.updated_at)}. Si publicás ahora, los reemplazás. ¿Publicar igual?`, "Publicar igual", "Cancelar"))) return;
+    const at = await saveContent(strip(draft), user.id);
+    remoteData = strip(draft); lastPub = new Date(at); computeBase(); histSave(); store.del(DRAFT_KEY); clearTimeout(stashTimer);
     isDirty = false; paintStatus(); toast("Publicado. La web ya muestra los cambios.");
   } catch (e) { toast(`No se pudo publicar. ${plain(e)}`, "err", 12000, { label: "Reintentar", icon: "redo", run: () => publish() }); saveBtn.disabled = false; }
   finally { saveLabel(); topEl.classList.remove("is-busy"); paintStatus(); }
@@ -209,12 +215,13 @@ const shortcuts = () => confirmBox(h("div", { class: "help" },
 // buscador de pantallas, servicios y ayudas (Ctrl+K)
 function palette() {
   if (document.querySelector(".palette")) return;
+  const back = document.activeElement; // para devolver el foco al cerrar
   const acts = [
     ...SECTIONS.map((s) => ({ label: s.label, sub: s.desc, run: () => goto(s.id) })),
     { label: "Cambiar un horario", sub: "Ir a los horarios de salida", run: () => goto("horarios") },
     ...draft.routes.map((r, i) => ({ label: `${r.from || "Origen"} → ${r.to || "Destino"}`, sub: `Horarios${r.service ? " · " + r.service : ""}`, run: () => goto("horarios", { item: i }) })),
     ...draft.destinations.map((d, i) => ({ label: d.name || "Destino", sub: "Destinos", run: () => goto("destinos", { item: i }) })),
-    { label: "Guardar y publicar", sub: "Ctrl+S", run: () => publish() },
+    { label: "Guardar y publicar", sub: "Ctrl+S", run: () => (isDirty ? publish() : toast("No hay cambios para publicar.")) },
     { label: "Deshacer", sub: "Ctrl+Z", run: () => histGo(-1) },
     { label: "Ver la web", sub: "Se abre en otra pestaña", run: () => window.open("/", "_blank", "noopener") },
     ...SECTIONS.map((s) => ({ label: `Cómo se hace: ${s.label}`, sub: "Ayuda", run: () => help(s) })),
@@ -226,15 +233,15 @@ function palette() {
   let sel = 0, shown = acts;
   const input = h("input", { type: "text", placeholder: "Escribí a dónde querés ir…", "aria-label": "Buscar pantalla o acción", role: "combobox", "aria-expanded": "true", "aria-controls": "pal-list", "aria-autocomplete": "list" });
   const ul = h("ul", { class: "palette__list", role: "listbox", id: "pal-list" });
-  const close = () => { ov.remove(); document.removeEventListener("keydown", key, true); };
+  const close = () => { ov.remove(); document.removeEventListener("keydown", key, true); back?.focus?.(); };
   const run = (a) => { close(); a.run(); };
   const draw = () => { input.setAttribute("aria-activedescendant", shown.length ? `pal-${sel}` : ""); input.setAttribute("aria-expanded", String(shown.length > 0));
     if (!shown.length) { ul.replaceChildren(h("li", { class: "palette__none", role: "status" }, `Nada coincide con "${input.value}". Probá con otra palabra.`)); return; }
     ul.replaceChildren(...shown.map((a, i) => h("li", { id: `pal-${i}`, role: "option", "aria-selected": String(i === sel), class: i === sel ? "is-sel" : "", onclick: () => run(a) }, h("strong", {}, a.label), a.sub && h("small", {}, a.sub)))); };
   const key = (e) => {
     if (e.key === "Escape") { e.preventDefault(); close(); }
-    else if (e.key === "ArrowDown") { e.preventDefault(); sel = Math.min(shown.length - 1, sel + 1); draw(); }
-    else if (e.key === "ArrowUp") { e.preventDefault(); sel = Math.max(0, sel - 1); draw(); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); sel = Math.min(shown.length - 1, sel + 1); draw(); ul.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" }); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); sel = Math.max(0, sel - 1); draw(); ul.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" }); }
     else if (e.key === "Tab") e.preventDefault(); // el foco queda en el buscador
     else if (e.key === "Enter" && shown[sel]) { e.preventDefault(); run(shown[sel]); }
   };
@@ -276,7 +283,7 @@ function shell(pending) {
       const lab = [...scope.querySelectorAll("label")].find((l) => l.textContent.trim().toLowerCase().startsWith(field.toLowerCase()));
       const box = lab?.closest(".field");
       if (box) {
-        target = box; box.closest("details")?.setAttribute("open", "");
+        target = box; for (let d = box.closest("details"); d; d = d.parentElement?.closest("details")) d.open = true; box.querySelectorAll("details").forEach((d) => { d.open = true; });
         box.classList.add("is-bad");
         let e = box.querySelector(".err"); if (!e) { e = h("small", { class: "err", role: "alert" }); box.append(e); }
         const m = (msg || "").split(": ").slice(1).join(": ") || msg || "Revisá este dato."; e.textContent = m.charAt(0).toUpperCase() + m.slice(1);
@@ -284,7 +291,7 @@ function shell(pending) {
         box.addEventListener("input", () => { box.classList.remove("is-bad"); e.textContent = ""; }, { once: true });
       }
     }
-    target.scrollIntoView({ block: "center", behavior: "smooth" });
+    target.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
     target.classList.add("is-flash"); setTimeout(() => target.classList.remove("is-flash"), 2400);
   };
   goto = (id, t) => {
@@ -305,7 +312,7 @@ function shell(pending) {
     const prev = snapNow();
     draft = withDefaults(structuredClone(remoteData)); isDirty = false; clearTimeout(stashTimer); store.del(DRAFT_KEY); clearTimeout(histTimer); histPush(); paintStatus(); draw();
     toast("Descartaste los cambios sin publicar.", "ok", 9000, { label: "Deshacer", run: () => { draft = withDefaults(JSON.parse(prev)); isDirty = true; stashDraft(); histPush(); paintStatus(); draw(); } });
-  } }, "Descartar cambios");
+  } }, h("span", { class: "lbl-long" }, "Descartar cambios"), h("span", { class: "lbl-short" }, "Descartar"));
 
   // borrador de una sesión anterior que no se llegó a publicar
   const recover = pending && h("div", { class: "recover", role: "alert" },
@@ -374,6 +381,7 @@ addEventListener("keydown", (e) => {
   if (!(e.ctrlKey || e.metaKey)) return;
   const k = e.key.toLowerCase();
   if (k === "z" && saveBtn?.isConnected && !document.querySelector(".modal") && !e.isComposing) { e.preventDefault(); histGo(e.shiftKey ? 1 : -1); return; } // un solo deshacer para todo, también dentro de los campos
+  if (k === "y" && saveBtn?.isConnected && !document.querySelector(".modal")) { e.preventDefault(); histGo(1); return; }
   if (k === "s") {
     e.preventDefault();
     if (saveBtn?.isConnected && !saveBtn.disabled && !document.querySelector(".modal")) publish();

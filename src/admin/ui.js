@@ -15,7 +15,7 @@ export function h(tag, attrs, ...kids) {
 }
 
 // los errores de red se explican en llano (nunca "TypeError: Failed to fetch")
-export const plainErr = (e) => (/fetch|network|conexi|tard|abort|load failed|offline/i.test(String(e?.message || e)) ? "No hay conexión con la base de datos. Revisá tu internet y probá de nuevo." : String(e?.message || e));
+export const plainErr = (e) => (/fetch|network|conexi|tard|abort|load failed|offline/i.test(String(e?.message || e)) ? "No hay conexión con la base de datos. Revisá tu internet y probá de nuevo." : /rate limit|too many/i.test(String(e?.message || e)) ? "Hiciste muchos intentos seguidos. Esperá unos minutos y probá de nuevo." : /not confirmed/i.test(String(e?.message || e)) ? "Esa cuenta todavía no confirmó su email." : String(e?.message || e));
 
 // ---------- iconos (un solo trazo, mismo grosor) ----------
 const ICONS = {
@@ -48,7 +48,10 @@ export const icon = (name, size = 20) =>
   h("span", { class: "i", "aria-hidden": "true", html: `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] || ""}</svg>` });
 
 // ---------- avisos ----------
-let toastBox;
+// los avisos viven siempre en la página: un lector de pantalla anuncia también el primero
+let toastBox = h("div", { class: "toasts", role: "status", "aria-live": "polite" }); document.body.append(toastBox);
+// main.js registra acá el deshacer global, para que los avisos "Deshacer" usen el mismo historial
+export const hooks = {};
 // action: { label, run } agrega un botón (por ejemplo "Deshacer")
 export function toast(msg, kind = "ok", ms = 3200, action) {
   if (!toastBox) { toastBox = h("div", { class: "toasts", role: "status", "aria-live": "polite" }); document.body.append(toastBox); }
@@ -92,11 +95,12 @@ export function field({ label, hint, help, value, onInput, long, type = "text", 
   const input = long
     ? h("textarea", { id, rows, placeholder, class: mono ? "mono" : "" }, value ?? "")
     : h("input", { id, type, placeholder, list, value: value ?? "", class: mono ? "mono" : "" });
-  const err = h("small", { class: "err", role: "alert" }, error || "");
-  const note = help ? h("small", { class: "fhelp", hidden: true }, help) : null;
+  const err = h("small", { class: "err", role: "alert", id: id + "-e" }, error || "");
+  const note = help ? h("small", { class: "fhelp", hidden: true, id: id + "-n" }, help) : null;
   const q = help ? h("button", { type: "button", class: "qmark", title: "¿Qué es esto?", "aria-label": `¿Qué es "${label}"?`, "aria-expanded": "false",
     onclick: () => { note.hidden = !note.hidden; q.setAttribute("aria-expanded", String(!note.hidden)); } }, "?") : null;
-  const box = h("div", { class: "field" + (error ? " is-bad" : "") }, h("label", { for: id }, label, q), note, input, hint && h("small", { class: "hint" }, hint), err);
+  const box = h("div", { class: "field" + (error ? " is-bad" : "") }, h("div", { class: "field__lab" }, h("label", { for: id }, label), q), note, input, hint && h("small", { class: "hint", id: id + "-h" }, hint), err);
+  input.setAttribute("aria-describedby", [help ? id + "-n" : "", hint ? id + "-h" : "", id + "-e"].filter(Boolean).join(" "));
   const verify = () => { const m = validate ? validate(input.value) : ""; err.textContent = m || ""; box.classList.toggle("is-bad", !!m); input.setAttribute("aria-invalid", m ? "true" : "false"); };
   input.addEventListener("input", () => { onInput(input.value, input); if (box.classList.contains("is-bad")) verify(); });
   if (validate) input.addEventListener("blur", verify);
@@ -140,7 +144,7 @@ export function listEditor({ id, items, render, onChange, addLabel = "Agregar", 
               onclick: () => {
                 // sin pregunta: se quita y queda a mano "Deshacer"
                 const [gone] = items.splice(i, 1); onChange(); draw();
-                toast("Quitaste un elemento.", "ok", 8000, { label: "Deshacer", run: () => { items.splice(i, 0, gone); onChange(); draw(); } });
+                toast("Quitaste un elemento.", "ok", 8000, { label: "Deshacer", run: () => { if (hooks.undo) hooks.undo(); else { items.splice(i, 0, gone); onChange(); draw(); } } });
               } }, icon("x", 17)))),
         render(it, i, draw)));
     });

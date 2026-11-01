@@ -34,8 +34,10 @@ export async function fetchRemote() {
 export const withDefaults = (remote) => mergeContent(structuredClone(DEFAULT_CONTENT), remote || {});
 
 export async function saveContent(data, userId) {
-  const { error } = await sb.from("site_content").upsert({ id: "main", data, updated_by: userId, updated_at: new Date().toISOString() }, { onConflict: "id" });
+  const at = new Date().toISOString();
+  const { error } = await sb.from("site_content").upsert({ id: "main", data, updated_by: userId, updated_at: at }, { onConflict: "id" });
   if (error) throw new Error("No se pudo guardar: " + error.message);
+  return at; // la hora exacta que quedó guardada (sirve para detectar si otra persona publicó antes)
 }
 
 export async function listHistory() {

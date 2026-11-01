@@ -1,4 +1,4 @@
-import { h, field, check, group, groupAside, listEditor, imageField, confirmBox, toast, icon } from "./ui.js";
+import { h, field, check, group, groupAside, listEditor, imageField, confirmBox, toast, icon, hooks } from "./ui.js";
 import { listHistory } from "./api.js";
 import { heroVideoTool } from "./hero-video.js";
 
@@ -41,7 +41,7 @@ function textPreview(draft, fields) {
     const vals = fields.map(([p, l]) => ({ l, v: get(draft, p) || "" }));
     const titles = vals.filter((x) => /^Título/.test(x.l));
     el.replaceChildren(h("span", { class: "tpv__tag" }, "Así se ve en la web"),
-      ...titles.map((x, i) => h("p", { class: "tpv__t" + (i ? " is-2" : "") }, x.v || "…")),
+      ...titles.map((x, i) => h("p", { class: "tpv__t" + (/gris/i.test(x.l) ? " is-gray" : i ? " is-2" : "") }, x.v || "…")),
       ...vals.filter((x) => !/^Título/.test(x.l)).map((x) => (/botón/i.test(x.l) ? h("span", { class: "tpv__btn" }, x.v || "…") : h("p", { class: "tpv__p" }, x.v || "…"))));
   };
   update();
@@ -82,6 +82,7 @@ const TEXT_GROUPS = [
   ["Contacto", "", [["texts.contacto.a", "Título, primera línea"], ["texts.contacto.b", "Título, segunda línea (gris)"], ["texts.contacto.call", "Botón de llamar"], ["texts.contacto.wa", "Botón de WhatsApp"], ["texts.contacto.central", "Rótulo del teléfono central"]]],
 ];
 
+let foldOpen = 0; // el grupo abierto de Textos sobrevive a deshacer y a recargar la pantalla
 function textsSection({ draft, dirty }) {
   const wrap = h("div", { class: "stack" });
   TEXT_GROUPS.forEach(([title, desc, fields], i) => {
@@ -89,11 +90,11 @@ function textsSection({ draft, dirty }) {
     const grid = h("div", { class: "grid2" }, fields.map(([path, label, long]) =>
       field({ label, long, rows: 3, value: get(draft, path), onInput: (v) => { set(draft, path, v); dirty(); pv.update(); } })));
     // un acordeón: se abre una parte de la web por vez (no hay que recorrer ~30 campos seguidos)
-    wrap.append(h("details", { class: "fold", name: "textos", open: i === 0 },
+    wrap.append(h("details", { class: "fold", name: "textos", open: i === foldOpen, ontoggle: (e) => { if (e.target.open) foldOpen = i; } },
       h("summary", {}, h("span", { class: "fold__t" }, h("h3", {}, title), desc ? h("small", {}, desc) : null), h("span", { class: "fold__n" }, `${fields.length} campos`)),
       h("div", { class: "fold__body" }, title === "Menú superior" ? h("div", {}) : pv.el, grid)));
   });
-  wrap.append(group("Franja de datos", "Las frases cortas que aparecen debajo del bloque \"Conectamos caminos\" (por ejemplo \"Todos los días\").",
+  wrap.append(group("Frases cortas bajo el título", "Las frases cortas que aparecen debajo del bloque \"Conectamos caminos\" (por ejemplo \"Todos los días\").",
     listEditor({ id: "facts", items: draft.texts.facts, onChange: dirty, addLabel: "Agregar frase", make: () => "", max: 6, title: (_, i) => `Frase ${i + 1}`,
       render: (it, i) => field({ label: "Texto", value: it, onInput: (v) => { draft.texts.facts[i] = v; dirty(); } }) })));
   return wrap;
@@ -101,7 +102,7 @@ function textsSection({ draft, dirty }) {
 
 /* ---------- a dónde lleva un botón: se elige, no se escribe ---------- */
 const LINKS = [["#horarios", "Horarios"], ["#destinos", "Destinos"], ["#reservar", "Reservar un pasaje"], ["#antes", "Antes de viajar"], ["#contacto", "Contacto"]];
-function linkPicker(c, draft, dirty) {
+function linkPicker(c, draft, dirty, after) {
   const kind = () => { const v = c.href || ""; return LINKS.some(([x]) => x === v) ? v : /^tel:/.test(v) ? "tel" : /wa\.me\//.test(v) ? "wa" : "web"; };
   const sel = h("select", { "aria-label": "A dónde lleva el botón" },
     ...LINKS.map(([v, l]) => h("option", { value: v }, l)),
@@ -119,7 +120,7 @@ function linkPicker(c, draft, dirty) {
     else if (k === "wa") { c.href = `https://wa.me/${draft.site.whatsapp}`; c.external = true; }
     else if (k === "tel") { if (!/^tel:/.test(c.href)) c.href = `tel:${draft.site.phoneTel || ""}`; c.external = false; }
     else { if (!/^https?:/.test(c.href)) c.href = "https://"; c.external = true; }
-    dirty(); drawExtra();
+    dirty(); drawExtra(); after?.();
   });
   drawExtra();
   return h("div", { class: "field" }, h("label", {}, "A dónde lleva el botón"), sel, extra);
@@ -131,17 +132,19 @@ function heroSection(ctx) {
   return h("div", { class: "stack" },
     group("Titular de entrada", "Lo primero que se ve al abrir la web.", h("div", { class: "grid2" },
       field({ label: "Titular", value: hero.headline, validate: (v) => (v.trim() ? "" : "Falta el titular. Es la frase grande de la portada."), onInput: (v) => { hero.headline = v; dirty(); } }),
-      field({ label: "Bajada", value: hero.subheadline, onInput: (v) => { hero.subheadline = v; dirty(); } }),
+      field({ label: "Frase debajo del titular", value: hero.subheadline, onInput: (v) => { hero.subheadline = v; dirty(); } }),
       field({ label: "Invitación a scrollear", value: hero.hint, onInput: (v) => { hero.hint = v; dirty(); } }))),
     group("Botones de la portada", "Los botones que van debajo del titular. Elegí qué dice cada uno y a dónde lleva.",
       listEditor({ id: "ctas", items: hero.ctas, onChange: dirty, addLabel: "Agregar botón", max: 3, min: 1, make: () => ({ label: "Nuevo botón", href: "#horarios" }), title: (c) => c.label || "Botón",
-        render: (c) => h("div", {},
-          h("div", { class: "grid2" },
-            field({ label: "Texto del botón", value: c.label, onInput: (v) => { c.label = v; dirty(); } }),
-            linkPicker(c, draft, dirty)),
-          h("div", { class: "checks" },
-            check({ label: "Botón principal (amarillo)", value: c.primary, onChange: (v) => { c.primary = v; dirty(); } }),
-            check({ label: "Abre en otra pestaña", value: c.external, onChange: (v) => { c.external = v; dirty(); } }))) })),
+        render: (c) => {
+          const ext = check({ label: "Abre en otra pestaña", value: c.external, onChange: (v) => { c.external = v; dirty(); } });
+          return h("div", {},
+            h("div", { class: "grid2" },
+              field({ label: "Texto del botón", value: c.label, onInput: (v) => { c.label = v; dirty(); } }),
+              linkPicker(c, draft, dirty, () => { const i = ext.querySelector("input"); if (i) i.checked = !!c.external; })),
+            h("div", { class: "checks" },
+              check({ label: "Botón principal (amarillo)", value: c.primary, onChange: (v) => { c.primary = v; dirty(); } }), ext));
+        } })),
     group("Textos de cada etapa del viaje", hero.frames ? "Cada etapa corresponde a uno de los videos que se subieron. Para agregar o quitar etapas, subí el video de nuevo (abajo)." : "Cada etapa corresponde a uno de los 5 videos originales. Para cambiar la cantidad de etapas, subí un video nuevo (abajo).",
       h("div", { class: "list" }, hero.etapas.map((e, i) => h("div", { class: "item" },
         h("div", { class: "item__bar" }, h("strong", {}, `Etapa ${i + 1}`)),
@@ -178,32 +181,38 @@ const hhmm = (m) => `${String(Math.floor(((m % 1440) + 1440) % 1440 / 60)).padSt
 const readTime = (s) => { const m = String(s).trim().match(/^(\d{1,2})[:.]?(\d{2})$/); return m && +m[1] < 24 && +m[2] < 60 ? `${m[1].padStart(2, "0")}:${m[2]}` : null; };
 
 // Horas como fichas sobre el tablero oscuro. Tocar una abre una ventanita pegada a ella (sin mover las demás).
-function timesBoard(r, onChange, others) {
+function timesBoard(r, onChange, others, onDraw) {
   const chips = h("div", { class: "tb__chips" });
   const count = h("small", { class: "tb__count" });
   const err = h("small", { class: "err", role: "alert" });
   const ta = h("textarea", { rows: 3, class: "mono", "aria-label": "Horarios escritos a mano" }, timesToText(r));
-  let open = -1, refocus = null;
+  let open = -1, refocus = null, commitOpen = null;
 
   const changed = () => { r._bad = undefined; r.times = [...new Set(r.times)].sort(); ta.value = timesToText(r); err.textContent = ""; onChange(); draw(); };
   const snap = () => ({ times: [...r.times], days: r.days ? { ...r.days } : undefined });
   const restore = (s) => { r.times = s.times; setDays(r, s.days); changed(); };
-  const undoable = (msg, fn) => { const s = snap(); fn(); toast(msg, "ok", 8000, { label: "Deshacer", run: () => restore(s) }); };
+  const undoable = (msg, fn) => { const s = snap(); fn(); toast(msg, "ok", 8000, { label: "Deshacer", run: () => (hooks.undo ? hooks.undo() : restore(s)) }); };
 
   const cell = (t, i) => {
     const btn = h("button", { type: "button", class: "tb__chip" + (open === i ? " is-open" : ""), "aria-expanded": String(open === i), "aria-haspopup": "dialog", title: "Tocá para cambiar la hora o quitarla",
-      onclick: () => { if (open === i) refocus = t; open = open === i ? -1 : i; draw(); } }, t, r.days?.[t] && h("em", {}, r.days[t]));
+      onclick: () => {
+        if (open === i) { refocus = t; open = -1; draw(); return; }
+        if (open !== -1 && commitOpen && !commitOpen()) return; // se guarda lo que se estaba escribiendo
+        open = r.times.indexOf(t); draw();
+      } }, t, r.days?.[t] && h("em", {}, r.days[t]));
     if (open !== i) return h("span", { class: "tb__cell" }, btn);
 
     const tIn = h("input", { type: "text", inputmode: "numeric", value: t, maxlength: 5, "aria-label": "Hora de salida" });
     const dIn = h("input", { type: "text", value: r.days?.[t] || "", placeholder: "Todos los días", "aria-label": "Días en que sale (ejemplo: mar · jue · vie)" });
     const pErr = h("small", { class: "err", role: "alert" });
     const done = () => {
-      const nt = readTime(tIn.value); if (!nt) { pErr.textContent = `No entiendo "${tIn.value}". Escribí una hora como 14:30.`; tIn.focus(); return; }
+      const nt = readTime(tIn.value); if (!nt) { pErr.textContent = `No entiendo "${tIn.value}". Escribí una hora como 14:30.`; tIn.focus(); return false; }
       const days = { ...(r.days || {}) }; delete days[t];
       const d = dIn.value.replace(/[()]/g, "").trim(); if (d) days[nt] = d;
       r.times[i] = nt; setDays(r, days); open = -1; refocus = nt; changed();
+      return true;
     };
+    commitOpen = done;
     const drop = () => undoable(`Quitaste la salida de las ${t}.`, () => { const days = { ...(r.days || {}) }; delete days[t]; setDays(r, days); r.times.splice(i, 1); open = -1; changed(); });
     const keys = (e) => { if (e.key === "Enter") { e.preventDefault(); done(); } else if (e.key === "Escape") { e.stopPropagation(); open = -1; refocus = t; draw(); } };
     [tIn, dIn].forEach((x) => x.addEventListener("keydown", keys));
@@ -254,9 +263,11 @@ function timesBoard(r, onChange, others) {
   });
 
   const draw = () => {
+    commitOpen = null;
     chips.replaceChildren(...(r.times.length ? r.times.map(cell) : [h("em", { class: "tb__empty" }, "Todavía no hay horarios. Escribí el primero abajo.")]));
     count.textContent = `${r.times.length} ${r.times.length === 1 ? "salida" : "salidas"} por día`;
     if (refocus != null) { const c = [...chips.querySelectorAll(".tb__chip")]; (c.find((x) => x.textContent.startsWith(refocus)) || c[0])?.focus(); refocus = null; }
+    onDraw?.();
   };
   draw();
   return h("div", { class: "tb" }, h("p", { class: "tb__hint" }, "Tocá una hora para cambiarla o quitarla."), chips,
@@ -272,6 +283,17 @@ function timesBoard(r, onChange, others) {
           h("small", { class: "hint" }, "Separados por coma. Si una salida va solo ciertos días: 14:15 (mar · jue · vie).")))));
 }
 
+// las horas de cada servicio se pliegan: se ve un resumen y se abre una tarjeta por vez
+let svcOpen = 0;
+function timesFold(r, i, dirty, routes) {
+  const sum = h("span", { class: "svc__sum" });
+  const upd = () => { const ts = r.times || []; sum.textContent = `${ts.length} ${ts.length === 1 ? "salida" : "salidas"}${ts.length ? "  ·  " + ts.slice(0, 4).join("   ") + (ts.length > 4 ? "   …" : "") : ""}`; };
+  const board = timesBoard(r, dirty, () => routes.filter((x) => x !== r), upd); upd();
+  return h("div", { class: "field" }, h("label", { class: "sr-only" }, "Horarios de salida"),
+    h("details", { class: "adv svc__times", name: "svc-times", open: i === svcOpen || !(r.times || []).length, ontoggle: (e) => { if (e.target.open) svcOpen = i; } },
+      h("summary", {}, h("strong", {}, "Horarios de salida"), sum), board));
+}
+
 /* ---------- horarios ---------- */
 function routesSection({ draft, dirty: baseDirty }) {
   const routes = draft.routes;
@@ -284,9 +306,9 @@ function routesSection({ draft, dirty: baseDirty }) {
     addLabel: "Agregar servicio", empty: "No hay servicios cargados.",
     make: () => ({ id: "r" + Math.random().toString(36).slice(2, 7), from: origins()[0] || "", to: "", via: "", service: "", stops: [], times: [], note: "" }),
     title: (r) => `${r.from || "Origen"} → ${r.to || "Destino"}`, sub: (r) => r.service,
-    render: (r) => h("div", { class: "svc" },
+    render: (r, i) => h("div", { class: "svc" },
       // lo que más se hace (las horas) va primero; los datos del servicio quedan plegados
-      h("div", { class: "field" }, h("label", { class: "sr-only" }, "Horarios de salida"), timesBoard(r, dirty, () => routes.filter((x) => x !== r))),
+      timesFold(r, i, dirty, routes),
       h("details", { class: "adv svc__more", open: !(r.from && r.to) }, h("summary", {}, "Datos del servicio (de dónde sale, a dónde llega y paradas)"),
         h("div", { class: "svc__fields" },
           h("div", { class: "grid2" },
@@ -356,9 +378,9 @@ function contactSection({ draft, dirty: baseDirty }) {
   const dirty = () => { baseDirty(); cpv.update(); };
   return h("div", { class: "stack" },
     groupAside("Datos de contacto", "", cpv.el, h("div", { class: "grid2" },
-      field({ label: "WhatsApp (solo números, con código de país)", help: "Es el número al que escriben los pasajeros. Va sin signos ni espacios: 54, después el 9 y el número con código de área, sin el 0 ni el 15.", value: site.whatsapp, mono: true, hint: "Ejemplo: 5493884640178", validate: (v) => (/^\d{10,15}$/.test(v.replace(/\D/g, "")) ? "" : "Tiene que tener entre 10 y 15 números."), onInput: (v) => { site.whatsapp = v.replace(/\D/g, ""); dirty(); } }),
+      field({ label: "WhatsApp (solo números, con código de país)", help: "Es el número al que escriben los pasajeros. Va sin signos ni espacios: 54, después el 9 y el número con código de área, sin el 0 ni el 15.", value: site.whatsapp, mono: true, hint: "Ejemplo: 5493884640178", validate: (v) => (/^\d{10,15}$/.test(v.replace(/\D/g, "")) ? "" : "Tiene que tener entre 10 y 15 números."), onInput: (v) => { const old = site.whatsapp; site.whatsapp = v.replace(/\D/g, ""); draft.hero.ctas.forEach((c) => { if (c.href === `https://wa.me/${old}`) c.href = `https://wa.me/${site.whatsapp}`; }); dirty(); } }),
       field({ label: "Teléfono central", value: site.phoneLabel, hint: "Con código de área, por ejemplo 0388 425-4331. El botón \"Llamar\" se arma solo.", validate: (v) => (v.replace(/\D/g, "").length >= 8 ? "" : "Escribí el teléfono con código de área."),
-        onInput: (v) => { site.phoneLabel = v; const d = v.replace(/\D/g, "").replace(/^0/, ""); site.phoneTel = d ? "+" + (d.startsWith("54") ? d : "54" + d) : ""; dirty(); } }),
+        onInput: (v) => { site.phoneLabel = v; const oldTel = site.phoneTel; const d = v.replace(/\D/g, "").replace(/^0/, ""); site.phoneTel = d ? "+" + (d.startsWith("54") ? d : "54" + d) : ""; draft.hero.ctas.forEach((c) => { if (c.href === "tel:" + oldTel) c.href = "tel:" + site.phoneTel; }); dirty(); } }),
       field({ label: "Título de la pestaña (arriba, en el navegador)", help: "Es el texto que se ve en la pestaña del navegador y cuando alguien busca la empresa en Google.", value: site.title, onInput: (v) => { site.title = v; dirty(); } })),
       field({ label: "Dirección (abajo de la página)", long: true, rows: 2, value: site.address, onInput: (v) => { site.address = v; dirty(); } }),
       field({ label: "Texto chico de abajo de la página", help: "Una línea chica que aparece al final de toda la web.", long: true, rows: 2, value: site.footerNote, onInput: (v) => { site.footerNote = v; dirty(); } })),
@@ -368,7 +390,7 @@ function contactSection({ draft, dirty: baseDirty }) {
           field({ label: "Localidad", value: b.name, onInput: (v) => { b.name = v; dirty(); } }),
           field({ label: "Teléfono", value: b.tel, onInput: (v) => { b.tel = v; dirty(); } }),
           field({ label: "Detalle (opcional)", value: b.sub || "", onInput: (v) => { if (v) b.sub = v; else delete b.sub; dirty(); } })) })),
-    group("Asistente de voz (avanzado)", "Identificador del agente de ElevenLabs que atiende las llamadas. No lo cambies si no estás seguro.",
+    group("Asistente de voz (avanzado)", "Es el código del asistente que atiende las llamadas de voz desde la web. No lo cambies si no estás seguro.",
       field({ label: "Código del asistente de voz", help: "Es el código que identifica al asistente que atiende las llamadas desde la web. No lo cambies si no estás seguro.", value: site.agentId, mono: true, onInput: (v) => { site.agentId = v.trim(); dirty(); } })));
 }
 
