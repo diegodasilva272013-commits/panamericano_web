@@ -91,7 +91,7 @@ function textsSection({ draft, dirty }) {
       field({ label, long, rows: 3, value: get(draft, path), onInput: (v) => { set(draft, path, v); dirty(); pv.update(); } })))));
   }
   wrap.append(group("Franja de datos", "Las frases cortas que aparecen debajo del bloque \"Conectamos caminos\" (por ejemplo \"Todos los días\").",
-    listEditor({ items: draft.texts.facts, onChange: dirty, addLabel: "Agregar frase", make: () => "", max: 6, title: (_, i) => `Frase ${i + 1}`,
+    listEditor({ id: "facts", items: draft.texts.facts, onChange: dirty, addLabel: "Agregar frase", make: () => "", max: 6, title: (_, i) => `Frase ${i + 1}`,
       render: (it, i) => field({ label: "Texto", value: it, onInput: (v) => { draft.texts.facts[i] = v; dirty(); } }) })));
   return wrap;
 }
@@ -105,7 +105,7 @@ function heroSection(ctx) {
       field({ label: "Bajada", value: hero.subheadline, onInput: (v) => { hero.subheadline = v; dirty(); } }),
       field({ label: "Invitación a scrollear", value: hero.hint, onInput: (v) => { hero.hint = v; dirty(); } }))),
     group("Botones de la portada", "Los botones debajo del titular. El enlace puede ser una sección (#horarios), una web (https://…) o un teléfono (tel:+54…).",
-      listEditor({ items: hero.ctas, onChange: dirty, addLabel: "Agregar botón", max: 3, min: 1, make: () => ({ label: "Nuevo botón", href: "#horarios" }), title: (c) => c.label || "Botón",
+      listEditor({ id: "ctas", items: hero.ctas, onChange: dirty, addLabel: "Agregar botón", max: 3, min: 1, make: () => ({ label: "Nuevo botón", href: "#horarios" }), title: (c) => c.label || "Botón",
         render: (c) => h("div", {},
           h("div", { class: "grid2" },
             field({ label: "Texto del botón", value: c.label, onInput: (v) => { c.label = v; dirty(); } }),
@@ -139,6 +139,10 @@ export function nextDepartures(routes, n = 4) {
   const next = all.filter((x) => x.m >= now);
   return { list: (next.length ? next : all).slice(0, n), tomorrow: !next.length };
 }
+// lugares que existen en Horarios (para avisar si un destino no coincide con ninguno)
+const placeList = (d) => [...new Set(d.routes.flatMap((r) => [r.from, r.to, ...(r.stops || [])]).map((x) => String(x || "").replace(/\*/g, "").trim()).filter(Boolean))];
+const normPlace = (x) => String(x).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+const knownPlace = (d, name) => placeList(d).some((p) => normPlace(p) === normPlace(name));
 const setDays = (r, days) => { if (days && Object.keys(days).length) r.days = days; else delete r.days; };
 const hhmm = (m) => `${String(Math.floor(((m % 1440) + 1440) % 1440 / 60)).padStart(2, "0")}:${String((((m % 60) + 60) % 60)).padStart(2, "0")}`;
 // "14:30", "14.30" o "1430" -> "14:30" (o null si no es una hora)
@@ -245,7 +249,7 @@ function routesSection({ draft, dirty: baseDirty }) {
   const origins = () => [...new Set(routes.map((r) => r.from).filter(Boolean))];
   const dl = h("datalist", { id: "origins-dl" }, origins().map((o) => h("option", { value: o })));
   const list = listEditor({
-    items: routes, onChange: () => { dirty(); dl.replaceChildren(...origins().map((o) => h("option", { value: o }))); },
+    id: "routes", items: routes, onChange: () => { dirty(); dl.replaceChildren(...origins().map((o) => h("option", { value: o }))); },
     addLabel: "Agregar servicio", empty: "No hay servicios cargados.",
     make: () => ({ id: "r" + Math.random().toString(36).slice(2, 7), from: origins()[0] || "", to: "", via: "", service: "", stops: [], times: [], note: "" }),
     title: (r) => `${r.from || "Origen"} → ${r.to || "Destino"}`, sub: (r) => r.service,
@@ -271,14 +275,14 @@ function routesSection({ draft, dirty: baseDirty }) {
 function destinationsSection({ draft, dirty: baseDirty }) {
   const dpv = destPreview(draft.destinations);
   const dirty = () => { baseDirty(); dpv.update(); };
-  return h("div", { class: "stack" }, groupAside("Tarjetas de destinos", "Las tarjetas que se deslizan en la sección \"Del valle al altiplano\". El nombre tiene que coincidir con una localidad de los horarios para que el botón \"Ver horarios\" funcione.", dpv.el,
-    listEditor({ items: draft.destinations, onChange: dirty, addLabel: "Agregar destino", min: 1, max: 14, title: (d) => d.name || "Destino", sub: (d) => d.tag,
+  return h("div", { class: "stack" }, h("datalist", { id: "places-dl" }, placeList(draft).map((p) => h("option", { value: p }))), groupAside("Tarjetas de destinos", "Las tarjetas que se deslizan en la sección \"Del valle al altiplano\". El nombre tiene que coincidir con una localidad de los horarios para que el botón \"Ver horarios\" funcione.", dpv.el,
+    listEditor({ id: "destinations", items: draft.destinations, onChange: dirty, addLabel: "Agregar destino", min: 1, max: 14, title: (d) => d.name || "Destino", sub: (d) => d.tag,
       make: () => ({ name: "", tag: "", text: "", image: "" }),
       render: (d) => h("div", { class: "split" },
         imageField({ label: "Foto", url: d.image, maxWidth: 1100, hint: "Se optimiza sola. Mejor si es vertical o cuadrada.", onChange: (u) => { d.image = u; dirty(); } }),
         h("div", {},
           h("div", { class: "grid2" },
-            field({ label: "Nombre", value: d.name, validate: (v) => (v.trim() ? "" : "Falta el nombre. Escribí el del lugar, por ejemplo Tilcara."), onInput: (v) => { d.name = v; dirty(); } }),
+            field({ label: "Nombre", value: d.name, list: "places-dl", validate: (v) => (!v.trim() ? "Falta el nombre. Escribí el del lugar, por ejemplo Tilcara." : knownPlace(draft, v) ? "" : "Este nombre no coincide con ninguna parada de Horarios: el botón «Ver horarios» no va a encontrar salidas."), onInput: (v) => { d.name = v; dirty(); } }),
             field({ label: "Zona (ej. Quebrada)", help: "Es la palabra chica que aparece sobre el nombre en la tarjeta del destino. Por ejemplo: Quebrada, Valle o Puna.", value: d.tag, onInput: (v) => { d.tag = v; dirty(); } })),
           field({ label: "Descripción corta", long: true, rows: 2, value: d.text, onInput: (v) => { d.text = v; dirty(); } }))) })));
 }
@@ -296,7 +300,7 @@ function gallerySection({ draft, dirty }) {
   upd();
   return h("div", { class: "stack" },
     group("Galería animada de la web", "Son las fotos que entran y se agrandan en el bloque \"Conectamos caminos\". Tienen que ser un múltiplo de 3 (6, 9, 12 o 15).", status,
-      listEditor({ items: draft.gallery, onChange: () => { upd(); dirty(); }, addLabel: "Agregar foto", max: 15, min: 6, title: (g, i) => g.caption || `Foto ${i + 1}`, sub: (g, i) => `N.º ${i + 1}`,
+      listEditor({ id: "gallery", items: draft.gallery, onChange: () => { upd(); dirty(); }, addLabel: "Agregar foto", max: 15, min: 6, title: (g, i) => g.caption || `Foto ${i + 1}`, sub: (g, i) => `N.º ${i + 1}`,
         make: () => ({ src: "", caption: "" }),
         render: (g) => h("div", { class: "split" },
           imageField({ label: "Foto", url: g.src, maxWidth: 1000, hint: "Mejor cuadrada. Se recorta al centro.", onChange: (u) => { g.src = u; delete g.zoom; dirty(); } }),
@@ -308,7 +312,7 @@ function boardSection({ draft, dirty }) {
       imageField({ label: "Foto", url: draft.boardImage.src, maxWidth: 1400, hint: "Mejor vertical (4:5) o apaisada.", onChange: (u) => { draft.boardImage.src = u; dirty(); } }),
       field({ label: "Descripción de la foto (para accesibilidad)", value: draft.boardImage.alt, onInput: (v) => { draft.boardImage.alt = v; dirty(); } }))),
     group("Servicios a bordo", "La lista junto a la foto.",
-      listEditor({ items: draft.services, onChange: dirty, addLabel: "Agregar servicio", max: 10, title: (s) => s[0] || "Servicio", make: () => ["", ""],
+      listEditor({ id: "services", items: draft.services, onChange: dirty, addLabel: "Agregar servicio", max: 10, title: (s) => s[0] || "Servicio", make: () => ["", ""],
         render: (s) => h("div", { class: "grid2" },
           field({ label: "Nombre", value: s[0], onInput: (v) => { s[0] = v; dirty(); } }),
           field({ label: "Detalle", value: s[1], onInput: (v) => { s[1] = v; dirty(); } })) })));
@@ -328,7 +332,7 @@ function contactSection({ draft, dirty: baseDirty }) {
       field({ label: "Dirección (abajo de la página)", long: true, rows: 2, value: site.address, onInput: (v) => { site.address = v; dirty(); } }),
       field({ label: "Texto chico de abajo de la página", help: "Una línea chica que aparece al final de toda la web.", long: true, rows: 2, value: site.footerNote, onInput: (v) => { site.footerNote = v; dirty(); } })),
     group("Boleterías", "El listado de teléfonos de la sección Contacto.",
-      listEditor({ items: draft.boleterias, onChange: dirty, addLabel: "Agregar boletería", max: 20, title: (b) => b.name || "Boletería", sub: (b) => b.tel, make: () => ({ name: "", tel: "" }),
+      listEditor({ id: "boleterias", items: draft.boleterias, onChange: dirty, addLabel: "Agregar boletería", max: 20, title: (b) => b.name || "Boletería", sub: (b) => b.tel, make: () => ({ name: "", tel: "" }),
         render: (b) => h("div", { class: "grid3" },
           field({ label: "Localidad", value: b.name, onInput: (v) => { b.name = v; dirty(); } }),
           field({ label: "Teléfono", value: b.tel, onInput: (v) => { b.tel = v; dirty(); } }),
@@ -340,7 +344,7 @@ function contactSection({ draft, dirty: baseDirty }) {
 /* ---------- preguntas ---------- */
 function faqSection({ draft, dirty }) {
   return h("div", { class: "stack" }, group("Preguntas frecuentes", "Se despliegan en la sección \"Lo que conviene saber\".",
-    listEditor({ items: draft.faq, onChange: dirty, addLabel: "Agregar pregunta", max: 30, title: (f) => f[0] || "Pregunta", make: () => ["", ""],
+    listEditor({ id: "faq", items: draft.faq, onChange: dirty, addLabel: "Agregar pregunta", max: 30, title: (f) => f[0] || "Pregunta", make: () => ["", ""],
       render: (f) => h("div", {},
         field({ label: "Pregunta", value: f[0], onInput: (v) => { f[0] = v; dirty(); } }),
         field({ label: "Respuesta", long: true, rows: 4, value: f[1], onInput: (v) => { f[1] = v; dirty(); } })) })));
@@ -410,7 +414,7 @@ export function validate(d) {
   const add = (sec, msg, extra = {}) => e.push({ sec, msg, ...extra });
   const phoneOk = (s) => /\d{6,}/.test(String(s).replace(/\D/g, ""));
   d.routes.forEach((r, i) => {
-    const n = `Horarios · ${[r.from?.trim(), r.to?.trim()].filter(Boolean).join(" → ") || "servicio " + (i + 1)}`, at = { item: i };
+    const n = `Horarios · ${[r.from?.trim(), r.to?.trim()].filter(Boolean).join(" → ") || "servicio " + (i + 1)}`, at = { item: i, list: "routes" };
     if (!r.from?.trim()) add("horarios", `${n}: falta el origen.`, { ...at, field: "Sale desde" });
     if (!r.to?.trim()) add("horarios", `${n}: falta el destino final.`, { ...at, field: "Destino final" });
     if (!r.stops?.length) add("horarios", `${n}: agregá al menos una parada.`, { ...at, field: "Paradas" });
@@ -418,20 +422,21 @@ export function validate(d) {
     else if (!r.times?.length) add("horarios", `${n}: agregá al menos un horario.`, { ...at, field: "Horarios de salida" });
   });
   const g = galleryStatus(d.gallery.length); if (!g.ok) add("galeria", "Galería: " + g.msg);
-  d.gallery.forEach((x, i) => { if (!x.src) add("galeria", `Galería: a la foto ${i + 1} le falta la imagen.`, { item: i }); });
+  d.gallery.forEach((x, i) => { if (!x.src) add("galeria", `Galería: a la foto ${i + 1} le falta la imagen.`, { item: i, list: "gallery" }); });
   d.destinations.forEach((x, i) => {
-    if (!x.name?.trim()) add("destinos", `Destinos: al destino ${i + 1} le falta el nombre.`, { item: i, field: "Nombre" });
-    if (!x.image) add("destinos", `Destinos: a "${x.name || i + 1}" le falta la foto.`, { item: i });
+    if (!x.name?.trim()) add("destinos", `Destinos: al destino ${i + 1} le falta el nombre.`, { item: i, list: "destinations", field: "Nombre" });
+    if (!x.image) add("destinos", `Destinos: a "${x.name || i + 1}" le falta la foto.`, { item: i, list: "destinations" });
   });
   d.boleterias.forEach((b, i) => {
-    if (!b.name?.trim() || !phoneOk(b.tel)) add("contacto", `Contacto: revisá la boletería ${i + 1} (localidad y teléfono).`, { item: i, field: b.name?.trim() ? "Teléfono" : "Localidad" });
+    if (!b.name?.trim()) add("contacto", `Contacto: a la boletería ${i + 1} le falta la localidad.`, { item: i, list: "boleterias", field: "Localidad" });
+    if (!phoneOk(b.tel)) add("contacto", `Contacto: revisá el teléfono de la boletería ${i + 1} (con código de área).`, { item: i, list: "boleterias", field: "Teléfono" });
   });
   if (!/^\d{10,15}$/.test(d.site.whatsapp)) add("contacto", "Contacto: el WhatsApp tiene que tener entre 10 y 15 números (con código de país).", { field: "WhatsApp" });
   const fi = d.faq.findIndex((f) => !(f[0]?.trim() && f[1]?.trim()));
-  if (fi >= 0) add("contacto", "Preguntas: hay preguntas o respuestas vacías.", { item: fi, field: d.faq[fi][0]?.trim() ? "Respuesta" : "Pregunta" });
+  if (fi >= 0) add("contacto", "Preguntas: hay preguntas o respuestas vacías.", { item: fi, list: "faq", field: d.faq[fi][0]?.trim() ? "Respuesta" : "Pregunta" });
   if (!d.hero.headline?.trim()) add("hero", "Portada: falta el titular.", { field: "Titular" });
   const ci = d.hero.ctas.findIndex((c) => !(c.label?.trim() && c.href?.trim()));
-  if (ci >= 0) add("hero", "Portada: hay botones sin texto o sin enlace.", { item: ci, field: "Texto del botón" });
+  if (ci >= 0) add("hero", "Portada: hay botones sin texto o sin enlace.", { item: ci, list: "ctas", field: "Texto del botón" });
   return e;
 }
 export const strip = (o) => JSON.parse(JSON.stringify(o, (k, v) => (k.startsWith("_") ? undefined : v)));

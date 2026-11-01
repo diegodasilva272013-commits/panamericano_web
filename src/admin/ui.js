@@ -14,6 +14,9 @@ export function h(tag, attrs, ...kids) {
   return el;
 }
 
+// los errores de red se explican en llano (nunca "TypeError: Failed to fetch")
+export const plainErr = (e) => (/fetch|network|conexi|tard|abort|load failed|offline/i.test(String(e?.message || e)) ? "No hay conexión con la base de datos. Revisá tu internet y probá de nuevo." : String(e?.message || e));
+
 // ---------- iconos (un solo trazo, mismo grosor) ----------
 const ICONS = {
   hero: '<rect x="5" y="3.5" width="14" height="14" rx="3.5"/><path d="M5 11h14M9 7h6"/><path d="M8.5 14.5h.01M15.5 14.5h.01M7.5 17.5v2.5M16.5 17.5v2.5"/>',
@@ -118,8 +121,8 @@ export function groupAside(title, desc, aside, ...kids) {
 export const kb = (n) => (n > 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.round(n / 1024) + " KB");
 
 // ---------- lista editable (subir, bajar, quitar, agregar) ----------
-export function listEditor({ items, render, onChange, addLabel = "Agregar", make, min = 0, max = 99, title, sub, empty = "Todavía no hay nada.", extra }) {
-  const box = h("div", { class: "list" });
+export function listEditor({ id, items, render, onChange, addLabel = "Agregar", make, min = 0, max = 99, title, sub, empty = "Todavía no hay nada.", extra }) {
+  const box = h("div", { class: "list", "data-list": id || null });
   const draw = () => {
     box.replaceChildren();
     if (!items.length) box.append(h("p", { class: "empty" }, empty));
@@ -163,7 +166,7 @@ export function imageField({ label, url, onChange, maxWidth = 1600, hint }) {
       const r = await uploadImage(f, { maxWidth });
       set(r.url); onChange(r.url);
       info.textContent = `Listo · se optimizó de ${kb(r.before)} a ${kb(r.after)} (${r.width}×${r.height}).`;
-    } catch (e) { toast(e.message, "err", 7000); }
+    } catch (e) { toast(plainErr(e), "err", 7000); }
     finally { btn.disabled = false; btn.textContent = old; file.value = ""; }
   });
   const btn = h("button", { type: "button", class: "btn btn--ghost", onclick: () => file.click() }, url ? "Cambiar imagen" : "Elegir imagen");

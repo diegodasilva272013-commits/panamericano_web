@@ -441,3 +441,13 @@ kbd{font:600 11px var(--f-text);padding:3px 7px;border-radius:6px;background:rgb
 .tpv .tpv__row strong{color:#fff;font-weight:700}
 .tpv .tpv__row em{font:600 12px ui-monospace,Menlo,Consolas,monospace;font-style:normal;color:var(--accent)}
 .split>div:not([class]){display:flex;flex-direction:column;gap:16px}
+
+/* ---- octava tanda: errores reales que encontró la evaluación ---- */
+.qmark{position:relative}
+.qmark::after{content:"";position:absolute;inset:-12px}
+.palette__none{padding:16px 12px;color:var(--muted);font-size:14px;cursor:default}
+.side__toggle.has-changes{position:relative}
+.side__toggle.has-changes::after{content:"";position:absolute;top:8px;right:8px;width:10px;height:10px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px #0b0b0a}
+@media(max-width:900px){
+  .top .state.is-dirty{display:block;grid-column:1/-1;justify-self:stretch;max-width:none;font-size:13px;padding:6px 12px;text-align:center}
+}

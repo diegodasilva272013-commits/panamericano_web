@@ -1,5 +1,5 @@
 import { configured, getSession, signIn, signOut, isAdmin, fetchRemote, withDefaults, saveContent } from "./api.js";
-import { h, toast, confirmBox, icon } from "./ui.js";
+import { h, toast, confirmBox, icon, plainErr } from "./ui.js";
 import { SECTIONS, validate, strip, fmtDate, fmtShort, nextDepartures } from "./sections.js";
 
 const app = document.getElementById("app");
@@ -38,11 +38,14 @@ const histGo = (d) => {
   const j = hi + d; if (j < 0 || j >= hist.length) return;
   hi = j; draft = withDefaults(JSON.parse(hist[hi])); isDirty = changedSections().size > 0;
   clearTimeout(stashTimer); if (isDirty) stashDraft(); else store.del(DRAFT_KEY);
+  const fields = () => [...document.querySelectorAll(".main input, .main textarea")];
+  const at = fields().indexOf(document.activeElement); // en cuál campo estaba el cursor
   redraw(); paintStatus(); paintUndo(); histSave();
+  if (at >= 0) { const el = fields()[at]; if (el) { el.focus({ preventScroll: true }); try { el.setSelectionRange(el.value.length, el.value.length); } catch { /* campo sin selección */ } } }
 };
 
 // los errores de red se explican en llano (nunca "TypeError: Failed to fetch")
-const plain = (e) => (/fetch|network|conexi|tard|abort|load failed|offline/i.test(String(e?.message || e)) ? "No hay conexión con la base de datos. Revisá tu internet y probá de nuevo." : String(e?.message || e));
+const plain = plainErr;
 const mark = '<svg viewBox="0 0 24 24" width="26" height="26"><rect width="24" height="24" rx="7" fill="#f4b400"/><path d="M2 18c7 1 14-3 20-11v5C16 19 9 22 2 21z" fill="#171200"/><path d="M2 21c7 1 14-3 20-11" stroke="#d8261f" stroke-width="2.2" fill="none"/></svg>';
 const brand = () => h("div", { class: "brand", html: mark + "<span>Panamericano</span>" });
 const sectionLabel = (id) => SECTIONS.find((s) => s.id === id)?.label || id;
@@ -109,7 +112,7 @@ function retryScreen(msg) {
     h("h1", {}, "No pudimos cargar el panel"),
     h("p", { class: "lead" }, "Revisá tu conexión a internet y probá de nuevo. Tus cambios sin publicar no se pierden."),
     h("p", { class: "err", role: "alert" }, plain(msg)),
-    h("button", { class: "btn", type: "button", onclick: () => boot() }, "Reintentar"),
+    h("button", { class: "btn btn--primary", type: "button", onclick: () => boot() }, "Reintentar"),
   ]));
   document.body.dataset.retry = "1"; // al volver internet, se reintenta solo
 }
@@ -161,6 +164,7 @@ function paintStatus() {
   saveBtn.title = isDirty ? "Guardar y publicar (Ctrl+S)" : "No hay cambios para publicar";
   discardBtn.hidden = !isDirty;
   navEl?.querySelectorAll("button[data-id]").forEach((b) => b.classList.toggle("has-changes", ch.includes(b.dataset.id)));
+  document.querySelector(".side__toggle")?.classList.toggle("has-changes", ch.length > 0);
   paintErrBar();
 }
 const saveLabel = () => saveBtn.replaceChildren(h("span", { class: "lbl-dirty" }, "Guardar y publicar", h("kbd", { class: "kbd-inline" }, "Ctrl S")), h("span", { class: "lbl-clean" }, "Todo publicado"));
@@ -222,7 +226,9 @@ function palette() {
   const ul = h("ul", { class: "palette__list", role: "listbox", id: "pal-list" });
   const close = () => { ov.remove(); document.removeEventListener("keydown", key, true); };
   const run = (a) => { close(); a.run(); };
-  const draw = () => { input.setAttribute("aria-activedescendant", shown.length ? `pal-${sel}` : ""); ul.replaceChildren(...shown.map((a, i) => h("li", { id: `pal-${i}`, role: "option", "aria-selected": String(i === sel), class: i === sel ? "is-sel" : "", onclick: () => run(a) }, h("strong", {}, a.label), a.sub && h("small", {}, a.sub)))); };
+  const draw = () => { input.setAttribute("aria-activedescendant", shown.length ? `pal-${sel}` : ""); input.setAttribute("aria-expanded", String(shown.length > 0));
+    if (!shown.length) { ul.replaceChildren(h("li", { class: "palette__none", role: "status" }, `Nada coincide con "${input.value}". Probá con otra palabra.`)); return; }
+    ul.replaceChildren(...shown.map((a, i) => h("li", { id: `pal-${i}`, role: "option", "aria-selected": String(i === sel), class: i === sel ? "is-sel" : "", onclick: () => run(a) }, h("strong", {}, a.label), a.sub && h("small", {}, a.sub)))); };
   const key = (e) => {
     if (e.key === "Escape") { e.preventDefault(); close(); }
     else if (e.key === "ArrowDown") { e.preventDefault(); sel = Math.min(shown.length - 1, sel + 1); draw(); }
@@ -230,7 +236,8 @@ function palette() {
     else if (e.key === "Tab") e.preventDefault(); // el foco queda en el buscador
     else if (e.key === "Enter" && shown[sel]) { e.preventDefault(); run(shown[sel]); }
   };
-  input.addEventListener("input", () => { const q = input.value.trim().toLowerCase(); shown = acts.filter((a) => (a.label + " " + (a.sub || "") + " " + (a.kw || "")).toLowerCase().includes(q)); sel = 0; draw(); });
+  const norm = (x) => String(x).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  input.addEventListener("input", () => { const ws = norm(input.value).split(/\s+/).filter(Boolean); shown = acts.filter((a) => { const t = norm(a.label + " " + (a.sub || "") + " " + (a.kw || "")); return ws.every((w) => t.includes(w)); }); sel = 0; draw(); });
   const ov = h("div", { class: "modal palette", onclick: (e) => { if (e.target === ov) close(); } }, h("div", { class: "modal__box palette__box", role: "dialog", "aria-modal": "true", "aria-label": "Buscar" }, input, ul));
   document.addEventListener("keydown", key, true); document.body.append(ov); draw(); input.focus();
 }
@@ -259,9 +266,9 @@ function shell(pending) {
 
   redraw = draw;
   // lleva al cliente al campo exacto con el problema, lo marca y lo resalta un momento
-  const focusTarget = ({ item, field, msg }) => {
+  const focusTarget = ({ item, list, field, msg }) => {
     let scope = main;
-    if (item != null) scope = main.querySelectorAll(".list > .item")[item] || main;
+    if (item != null) { const box = list ? main.querySelector(`[data-list="${list}"]`) : main.querySelector(".list"); scope = box?.querySelectorAll(":scope > .item")[item] || main; }
     let target = scope;
     if (field) {
       const lab = [...scope.querySelectorAll("label")].find((l) => l.textContent.trim().toLowerCase().startsWith(field.toLowerCase()));
@@ -319,8 +326,9 @@ function shell(pending) {
       h("div", { class: "side__foot" }, h("small", {}, user.email),
         h("a", { class: "link only-m", href: "/", target: "_blank", rel: "noopener" }, icon("external", 16), "Ver la web"),
         h("button", { type: "button", class: "link", onclick: async () => {
-          if (isDirty && !(await confirmBox("Hay cambios sin publicar. Si salís se pierden. ¿Salir igual?", "Salir"))) return;
-          isDirty = false; store.del(DRAFT_KEY); await signOut(); await boot();
+          if (isDirty && !(await confirmBox("Hay cambios sin publicar. Quedan guardados en este navegador para cuando vuelvas a entrar. ¿Salir igual?", "Salir"))) return;
+          if (isDirty) stashDraft();
+          isDirty = false; await signOut(); await boot();
         } }, icon("logout", 17), "Cerrar sesión"))));
   app.replaceChildren(h("div", { class: "layout" }, sideEl, h("div", { class: "content" }, topEl, errBar, recover || null, main)));
   if (!histRestored) histReset();
