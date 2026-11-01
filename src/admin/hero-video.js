@@ -45,10 +45,10 @@ export function heroVideoTool(ctx) {
   const clipsBox = h("div", { class: "list" });
   const resultBox = h("div", {});
   const fileIn = h("input", { type: "file", accept: "video/*", multiple: true, hidden: true });
-  const genBtn = h("button", { type: "button", class: "btn", onclick: () => generate() }, "Generar el hero");
+  const genBtn = h("button", { type: "button", class: "btn", onclick: () => generate() }, "Generar el video de la portada");
   const cancelBtn = h("button", { type: "button", class: "btn btn--ghost", hidden: true, onclick: () => { S.cancel = true; } }, "Cancelar");
 
-  const setBar = (p) => { bar.hidden = false; bar.firstChild.style.width = Math.round(p * 100) + "%"; };
+  const setBar = (p) => { bar.hidden = false; bar.firstChild.style.transform = `scaleX(${p})`; };
   const say = (t, kind) => { msg.textContent = t; msg.className = "status" + (kind ? " is-" + kind : ""); };
 
   function drawClips(keepMsg) {
@@ -152,7 +152,7 @@ export function heroVideoTool(ctx) {
         poster: publicUrl(BUCKET_FRAMES, `${version}/poster.webp`), posterMobile: publicUrl(BUCKET_FRAMES, `${version}/poster-mobile.webp`),
         etapas: clips.map((c, i) => ({ clip: i, rail: c.rail.trim() || c.title.trim(), title: c.title.trim(), detail: c.detail.trim() })),
       };
-      say(`Listo: ${N} cuadros por formato subidos. Revisá las vistas previas y tocá "Usar este hero".`, "ok");
+      say(`Listo: ${N} cuadros por formato subidos. Revisá las vistas previas y tocá "Usar este video".`, "ok");
       showResult(thumbs);
     } catch (e) {
       if (e.message === "cancelado") say("Se canceló. No se cambió nada en la web.", "bad");
@@ -170,8 +170,8 @@ export function heroVideoTool(ctx) {
         h("button", { type: "button", class: "btn", onclick: () => {
           draft.hero.frames = { base: r.base, count: r.count, cortes: r.cortes, patron: "f_%04d.webp", v: r.version };
           draft.hero.poster = r.poster; draft.hero.posterMobile = r.posterMobile; draft.hero.etapas = r.etapas;
-          dirty(); toast("Hero nuevo cargado en el editor. Tocá \"Guardar y publicar\" para que se vea en la web.", "ok", 8000); rerender();
-        } }, "Usar este hero"),
+          dirty(); toast("Video nuevo cargado en el editor. Tocá \"Guardar y publicar\" para que se vea en la web.", "ok", 8000); rerender();
+        } }, "Usar este video"),
         h("small", { class: "hint" }, "Los cuadros ya están subidos pero la web no cambia hasta que guardes."))));
   }
 
@@ -179,21 +179,21 @@ export function heroVideoTool(ctx) {
     try {
       const keep = draft.hero.frames?.v; const all = await listFrameVersions(); const old = all.filter((v) => v !== keep && v !== S.result?.version);
       if (!old.length) return toast("No hay versiones anteriores para borrar.");
-      if (!(await confirmBox(`Hay ${old.length} versiones anteriores del hero guardadas. Se van a borrar para liberar espacio. La versión que está en la web no se toca. ¿Seguir?`, "Borrar"))) return;
+      if (!(await confirmBox(`Hay ${old.length} versiones anteriores del video guardadas. Se van a borrar para liberar espacio. La versión que está en la web no se toca. ¿Seguir?`, "Borrar"))) return;
       cleanBtn.disabled = true; for (const v of old) await removeFrameVersion(v);
       toast(`Se borraron ${old.length} versiones anteriores.`);
     } catch (e) { toast(e.message, "err"); } finally { cleanBtn.disabled = false; }
   } }, "Borrar versiones anteriores");
 
   drawClips();
-  root.append(group("Cambiar el video del hero",
-    "El hero de la portada es un recorrido que avanza al scrollear. Para cambiarlo, subí los videos de cada tramo (en orden): el panel los une con un fundido y arma el recorrido completo.",
+  root.append(group("Cambiar el video de la portada",
+    "La portada es un recorrido que avanza al scrollear. Para cambiarlo, subí los videos de cada tramo (en orden): el panel los une con un fundido y arma el recorrido completo.",
     h("ul", { class: "tips" },
       h("li", {}, "Formato: MP4 horizontal (16:9), de 1280 px de ancho o más. Sin audio no hace falta."),
       h("li", {}, "Entre 2 y 8 tramos de 5 a 12 segundos cada uno. Más largo = más pesado."),
       h("li", {}, "Hacelo desde una computadora con Chrome o Edge y buena conexión: tarda varios minutos y sube unos 75 MB."),
       h("li", {}, "La web actual no se toca hasta que toques \"Guardar y publicar\".")),
-    !CAN_WEBP && h("p", { class: "status is-bad" }, "Este navegador no puede crear las imágenes del hero. Abrí el panel en Chrome o Edge."),
+    !CAN_WEBP && h("p", { class: "status is-bad" }, "Este navegador no puede crear las imágenes de la portada. Abrí el panel en Chrome o Edge."),
     h("div", { class: "list__add" }, h("button", { type: "button", class: "btn btn--ghost", onclick: () => fileIn.click() }, "+ Agregar videos"), fileIn),
     clipsBox,
     h("details", { class: "adv" }, h("summary", {}, "Opciones avanzadas"),

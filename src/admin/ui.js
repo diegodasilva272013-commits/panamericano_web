@@ -24,6 +24,11 @@ const ICONS = {
   abordo: '<rect x="4" y="4" width="16" height="13.5" rx="3"/><path d="M4 11h16M8 20.5v-3M16 20.5v-3"/>',
   contacto: '<path d="M6.5 4h3L11 8l-2 1.3a10 10 0 0 0 5.7 5.7L16 13l4 1.5v3a2 2 0 0 1-2.2 2A15 15 0 0 1 4.5 6.2 2 2 0 0 1 6.5 4z"/>',
   preguntas: '<circle cx="12" cy="12" r="8.5"/><path d="M9.7 9.6a2.4 2.4 0 1 1 3.4 2.2c-.8.4-1.1.9-1.1 1.7M12 16.6v.1"/>',
+  resumen: '<rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><path d="M13 16.5h7M16.5 13v7"/>',
+  copy: '<rect x="8.5" y="8.5" width="11" height="11" rx="2.5"/><path d="M15.5 8.5V6.5A2.5 2.5 0 0 0 13 4H6.5A2.5 2.5 0 0 0 4 6.5V13A2.5 2.5 0 0 0 6.5 15.5h2"/>',
+  check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  alert: '<path d="M12 4.5 21 19H3L12 4.5zM12 10v4M12 16.5v.1"/>',
+  arrow: '<path d="M5 12h14m-5-5 5 5-5 5"/>',
   historial: '<path d="M4 12a8 8 0 1 0 2.6-5.9L4 8.5M4 4v4.5h4.5M12 8v4.2l2.8 1.6"/>',
   up: '<path d="M12 19V5m-6 6 6-6 6 6"/>',
   down: '<path d="M12 5v14m-6-6 6 6 6-6"/>',
@@ -45,13 +50,23 @@ export function toast(msg, kind = "ok", ms = 4200) {
 }
 export function confirmBox(msg, okLabel = "Aceptar") {
   return new Promise((res) => {
-    const done = (v) => { ov.remove(); res(v); };
-    const ov = h("div", { class: "modal" },
+    const back = document.activeElement;
+    const done = (v) => { document.removeEventListener("keydown", key, true); ov.remove(); back?.focus?.(); res(v); };
+    // Esc cierra; Tab queda dentro del cuadro
+    const key = (e) => {
+      if (e.key === "Escape") { e.preventDefault(); done(false); }
+      else if (e.key === "Tab") {
+        const f = [...ov.querySelectorAll("button, [href], input")]; if (!f.length) return;
+        const i = f.indexOf(document.activeElement);
+        if (e.shiftKey && i <= 0) { e.preventDefault(); f.at(-1).focus(); } else if (!e.shiftKey && i === f.length - 1) { e.preventDefault(); f[0].focus(); }
+      }
+    };
+    const cancel = h("button", { class: "btn btn--ghost", type: "button", onclick: () => done(false) }, "Cancelar");
+    const ov = h("div", { class: "modal", onclick: (e) => { if (e.target === ov) done(false); } },
       h("div", { class: "modal__box", role: "dialog", "aria-modal": "true" },
-        h("p", {}, msg),
-        h("div", { class: "modal__act" },
-          h("button", { class: "btn btn--ghost", type: "button", onclick: () => done(false) }, "Cancelar"),
-          h("button", { class: "btn", type: "button", onclick: () => done(true) }, okLabel))));
+        h("div", { class: "modal__msg" }, msg),
+        h("div", { class: "modal__act" }, cancel, h("button", { class: "btn", type: "button", onclick: () => done(true) }, okLabel))));
+    document.addEventListener("keydown", key, true);
     document.body.append(ov); ov.querySelector(".btn:last-child").focus();
   });
 }
@@ -94,6 +109,8 @@ export function listEditor({ items, render, onChange, addLabel = "Agregar", make
         h("div", { class: "item__bar" },
           h("strong", {}, title ? title(it, i) : `#${i + 1}`),
           h("span", { class: "item__btns" },
+            h("button", { type: "button", class: "ico", title: "Duplicar", "aria-label": "Duplicar", disabled: items.length >= max,
+              onclick: () => { const c = structuredClone(it); if (typeof c.id === "string") c.id = "r" + Math.random().toString(36).slice(2, 7); delete c._bad; items.splice(i + 1, 0, c); onChange(); draw(); } }, icon("copy", 17)),
             h("button", { type: "button", class: "ico", title: "Subir", "aria-label": "Subir", disabled: i === 0, onclick: () => move(-1) }, icon("up", 17)),
             h("button", { type: "button", class: "ico", title: "Bajar", "aria-label": "Bajar", disabled: i === items.length - 1, onclick: () => move(1) }, icon("down", 17)),
             h("button", { type: "button", class: "ico ico--del", title: "Quitar", "aria-label": "Quitar", disabled: items.length <= min,

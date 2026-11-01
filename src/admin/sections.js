@@ -1,4 +1,4 @@
-import { h, field, check, group, listEditor, imageField, confirmBox, toast } from "./ui.js";
+import { h, field, check, group, listEditor, imageField, confirmBox, toast, icon } from "./ui.js";
 import { listHistory } from "./api.js";
 import { heroVideoTool } from "./hero-video.js";
 
@@ -26,7 +26,7 @@ const parseStops = (s) => String(s).split(/[,;\n]+/).map((x) => x.trim()).filter
 /* ---------- textos: esquema de campos ---------- */
 const TEXT_GROUPS = [
   ["Menú superior", "Los nombres de los enlaces de arriba.", [["texts.nav.horarios", "Horarios"], ["texts.nav.destinos", "Destinos"], ["texts.nav.reservar", "Reservar"], ["texts.nav.antes", "Antes de viajar"], ["texts.nav.contacto", "Contacto"]]],
-  ["Bloque \"Conectamos caminos\"", "El título grande que aparece después del hero, con el párrafo y el botón.", [["texts.grid.a", "Título, primera línea (blanca)"], ["texts.grid.b", "Título, segunda línea (amarilla)"], ["texts.grid.text", "Párrafo", true], ["texts.grid.button", "Texto del botón"]]],
+  ["Bloque \"Conectamos caminos\"", "El título grande que aparece después de la portada, con el párrafo y el botón.", [["texts.grid.a", "Título, primera línea (blanca)"], ["texts.grid.b", "Título, segunda línea (amarilla)"], ["texts.grid.text", "Párrafo", true], ["texts.grid.button", "Texto del botón"]]],
   ["Sección Horarios", "Título y rótulos del tablero de salidas.", [["texts.horarios.a", "Título, primera línea"], ["texts.horarios.b", "Título, segunda línea (gris)"], ["texts.horarios.all", "Subtítulo de \"todas las salidas\""], ["texts.horarios.clock", "Texto junto al reloj"]]],
   ["Sección Destinos", "", [["texts.destinos.a", "Título, primera línea"], ["texts.destinos.b", "Título, segunda línea (gris)"]]],
   ["Sección El viaje", "La animación del bus por la Ruta 9.", [["texts.viaje.hint", "Invitación a scrollear"], ["texts.viaje.cta", "Botón del final"]]],
@@ -72,15 +72,43 @@ function heroSection(ctx) {
           field({ label: "Título grande", value: e.title, onInput: (v) => { e.title = v; dirty(); } }),
           field({ label: "Detalle", value: e.detail, onInput: (v) => { e.detail = v; dirty(); } }),
           field({ label: "Rótulo corto (barra inferior)", value: e.rail, onInput: (v) => { e.rail = v; dirty(); } })))))),
-    group("Cierre del hero", "Lo que aparece al terminar el recorrido, junto al buscador de horarios.", h("div", { class: "grid2" },
+    group("Cierre de la portada", "Lo que aparece al terminar el recorrido de la portada, junto al buscador de horarios.", h("div", { class: "grid2" },
       field({ label: "Título", value: hero.cierre.title, onInput: (v) => { hero.cierre.title = v; dirty(); } }),
       field({ label: "Texto", long: true, rows: 2, value: hero.cierre.text, onInput: (v) => { hero.cierre.text = v; dirty(); } }))),
     heroVideoTool(ctx));
 }
 
+/* ---------- vista previa del tablero de salidas ---------- */
+function boardPreview(routes) {
+  const el = h("div", { class: "board" });
+  const nowMin = () => {
+    const p = new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Jujuy", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date());
+    const g = (t) => +p.find((x) => x.type === t).value;
+    return (g("hour") % 24) * 60 + g("minute");
+  };
+  const update = () => {
+    const now = nowMin();
+    el.replaceChildren(...routes.map((r) => {
+      const all = (r.times || []).map((t) => ({ t, m: +t.slice(0, 2) * 60 + +t.slice(3) })).sort((a, b) => a.m - b.m);
+      const next = all.filter((x) => x.m >= now), shown = (next.length ? next : all).slice(0, 5);
+      return h("div", { class: "board__row" },
+        h("div", { class: "board__route" }, h("strong", {}, `${r.from || "Origen"} → ${r.to || "Destino"}`), r.service && h("span", {}, r.service)),
+        h("div", { class: "board__times" }, shown.length
+          ? shown.map((x, i) => h("span", { class: "board__t" + (i === 0 && next.length ? " is-next" : "") }, x.t, r.days?.[x.t] ? "*" : ""))
+          : h("em", {}, "Sin horarios")),
+        h("small", {}, next.length ? "Próximas salidas de hoy" : "Primeras salidas de mañana"));
+    }));
+    if (!routes.length) el.append(h("p", { class: "empty" }, "Todavía no hay servicios."));
+  };
+  update();
+  return { el, update };
+}
+
 /* ---------- horarios ---------- */
-function routesSection({ draft, dirty }) {
+function routesSection({ draft, dirty: baseDirty }) {
   const routes = draft.routes;
+  let preview;
+  const dirty = () => { baseDirty(); preview?.update(); };
   const origins = () => [...new Set(routes.map((r) => r.from).filter(Boolean))];
   const dl = h("datalist", { id: "origins-dl" }, origins().map((o) => h("option", { value: o })));
   const list = listEditor({
@@ -106,7 +134,9 @@ function routesSection({ draft, dirty }) {
         field({ label: "Nota (se muestra debajo)", long: true, rows: 2, value: r.note, onInput: (v) => { r.note = v; dirty(); } }));
     },
   });
+  preview = boardPreview(routes);
   return h("div", { class: "stack" }, dl,
+    group("Así se ve en la web", "El tablero de salidas con lo que estás escribiendo. Se actualiza solo mientras editás.", preview.el),
     group("Servicios y horarios", "Cada servicio es un origen, sus paradas y sus horarios de salida. El tablero y el buscador de la web se arman solos con esto.", list));
 }
 
@@ -200,38 +230,73 @@ function historySection({ draft, replaceDraft }) {
   return h("div", { class: "stack" }, group("Versiones anteriores", "Las últimas versiones publicadas. Si algo salió mal, podés volver atrás.", box));
 }
 
+/* ---------- resumen: estado de cada parte de la web ---------- */
+function summarySection({ draft, goto }) {
+  const errs = validate(draft);
+  const info = {
+    hero: () => `${draft.hero.etapas.length} tramos del recorrido`,
+    textos: () => "Menú y títulos de cada sección",
+    horarios: () => `${draft.routes.length} servicios · ${draft.routes.reduce((n, r) => n + (r.times?.length || 0), 0)} salidas por día`,
+    destinos: () => `${draft.destinations.length} destinos`,
+    galeria: () => `${draft.gallery.length} fotos`,
+    abordo: () => `${draft.services.length} servicios a bordo`,
+    contacto: () => `${draft.boleterias.length} boleterías · WhatsApp ${draft.site.whatsapp || "sin cargar"}`,
+    preguntas: () => `${draft.faq.length} preguntas`,
+  };
+  const rows = SECTIONS.filter((s) => info[s.id]).map((s) => {
+    const n = errs.filter((e) => e.sec === s.id).length;
+    return h("button", { type: "button", class: "sumrow", onclick: () => goto(s.id) },
+      icon(s.id), h("span", { class: "sumrow__t" }, h("strong", {}, s.label), h("small", {}, info[s.id]())),
+      h("span", { class: "pill " + (n ? "is-warn" : "is-ok") }, icon(n ? "alert" : "check", 15), n ? `${n} por revisar` : "Todo en orden"),
+      icon("arrow", 18));
+  });
+  return h("div", { class: "stack" }, group("Estado de la web",
+    errs.length ? `Hay ${errs.length} ${errs.length === 1 ? "cosa" : "cosas"} por revisar antes de publicar. Tocá una fila para ir directo.` : "Todo está en orden. Elegí qué parte querés editar.",
+    h("div", { class: "sumlist" }, rows)));
+}
+
 export const SECTIONS = [
-  { id: "hero", label: "Inicio y hero", render: heroSection },
-  { id: "textos", label: "Textos de la web", render: textsSection },
-  { id: "horarios", label: "Horarios y servicios", render: routesSection },
-  { id: "destinos", label: "Destinos", render: destinationsSection },
-  { id: "galeria", label: "Fotos de la grilla", render: gallerySection },
-  { id: "abordo", label: "A bordo", render: boardSection },
-  { id: "contacto", label: "Contacto y boleterías", render: contactSection },
-  { id: "preguntas", label: "Preguntas frecuentes", render: faqSection },
-  { id: "historial", label: "Historial", render: historySection },
+  { id: "resumen", label: "Resumen", group: "Inicio", render: summarySection },
+  { id: "hero", label: "Portada y video", group: "Portada", render: heroSection },
+  { id: "textos", label: "Textos de la web", group: "Portada", render: textsSection },
+  { id: "horarios", label: "Horarios de salida", group: "Viajes", render: routesSection },
+  { id: "destinos", label: "Destinos", group: "Viajes", render: destinationsSection },
+  { id: "galeria", label: "Fotos de la grilla", group: "Fotos", render: gallerySection },
+  { id: "abordo", label: "A bordo", group: "Fotos", render: boardSection },
+  { id: "contacto", label: "Contacto y boleterías", group: "Pasajeros", render: contactSection },
+  { id: "preguntas", label: "Preguntas frecuentes", group: "Pasajeros", render: faqSection },
+  { id: "historial", label: "Versiones anteriores", group: "Avanzado", render: historySection },
 ];
 
 /* ---------- validacion antes de publicar ---------- */
 export function validate(d) {
+  // cada error dice en qué sección está (sec), qué elemento de la lista (item) y qué campo (field), para llevar ahí al cliente
   const e = [];
+  const add = (sec, msg, extra = {}) => e.push({ sec, msg, ...extra });
   const phoneOk = (s) => /\d{6,}/.test(String(s).replace(/\D/g, ""));
   d.routes.forEach((r, i) => {
-    const n = `Horarios · servicio ${i + 1}`;
-    if (!r.from?.trim()) e.push(`${n}: falta el origen.`);
-    if (!r.to?.trim()) e.push(`${n}: falta el destino final.`);
-    if (!r.stops?.length) e.push(`${n}: agregá al menos una parada.`);
-    if (r._bad) e.push(`${n}: hay horarios mal escritos (${r._bad.join(", ")}).`);
-    else if (!r.times?.length) e.push(`${n}: agregá al menos un horario.`);
+    const n = `Horarios · servicio ${i + 1}`, at = { item: i };
+    if (!r.from?.trim()) add("horarios", `${n}: falta el origen.`, { ...at, field: "Sale desde" });
+    if (!r.to?.trim()) add("horarios", `${n}: falta el destino final.`, { ...at, field: "Destino final" });
+    if (!r.stops?.length) add("horarios", `${n}: agregá al menos una parada.`, { ...at, field: "Paradas" });
+    if (r._bad) add("horarios", `${n}: hay horarios mal escritos (${r._bad.join(", ")}).`, { ...at, field: "Horarios de salida" });
+    else if (!r.times?.length) add("horarios", `${n}: agregá al menos un horario.`, { ...at, field: "Horarios de salida" });
   });
-  const g = galleryStatus(d.gallery.length); if (!g.ok) e.push("Fotos de la grilla: " + g.msg);
-  d.gallery.forEach((x, i) => { if (!x.src) e.push(`Fotos de la grilla: a la foto ${i + 1} le falta la imagen.`); });
-  d.destinations.forEach((x, i) => { if (!x.name?.trim()) e.push(`Destinos: al destino ${i + 1} le falta el nombre.`); if (!x.image) e.push(`Destinos: a "${x.name || i + 1}" le falta la foto.`); });
-  d.boleterias.forEach((b, i) => { if (!b.name?.trim() || !phoneOk(b.tel)) e.push(`Contacto: revisá la boletería ${i + 1} (localidad y teléfono).`); });
-  if (!/^\d{10,15}$/.test(d.site.whatsapp)) e.push("Contacto: el WhatsApp tiene que tener entre 10 y 15 números (con código de país).");
-  if (!d.faq.every((f) => f[0]?.trim() && f[1]?.trim())) e.push("Preguntas: hay preguntas o respuestas vacías.");
-  if (!d.hero.headline?.trim()) e.push("Hero: falta el titular.");
-  if (!d.hero.ctas.every((c) => c.label?.trim() && c.href?.trim())) e.push("Hero: hay botones sin texto o sin enlace.");
+  const g = galleryStatus(d.gallery.length); if (!g.ok) add("galeria", "Fotos de la grilla: " + g.msg);
+  d.gallery.forEach((x, i) => { if (!x.src) add("galeria", `Fotos de la grilla: a la foto ${i + 1} le falta la imagen.`, { item: i }); });
+  d.destinations.forEach((x, i) => {
+    if (!x.name?.trim()) add("destinos", `Destinos: al destino ${i + 1} le falta el nombre.`, { item: i, field: "Nombre" });
+    if (!x.image) add("destinos", `Destinos: a "${x.name || i + 1}" le falta la foto.`, { item: i });
+  });
+  d.boleterias.forEach((b, i) => {
+    if (!b.name?.trim() || !phoneOk(b.tel)) add("contacto", `Contacto: revisá la boletería ${i + 1} (localidad y teléfono).`, { item: i, field: b.name?.trim() ? "Teléfono" : "Localidad" });
+  });
+  if (!/^\d{10,15}$/.test(d.site.whatsapp)) add("contacto", "Contacto: el WhatsApp tiene que tener entre 10 y 15 números (con código de país).", { field: "WhatsApp" });
+  const fi = d.faq.findIndex((f) => !(f[0]?.trim() && f[1]?.trim()));
+  if (fi >= 0) add("preguntas", "Preguntas: hay preguntas o respuestas vacías.", { item: fi, field: d.faq[fi][0]?.trim() ? "Respuesta" : "Pregunta" });
+  if (!d.hero.headline?.trim()) add("hero", "Portada: falta el titular.", { field: "Titular" });
+  const ci = d.hero.ctas.findIndex((c) => !(c.label?.trim() && c.href?.trim()));
+  if (ci >= 0) add("hero", "Portada: hay botones sin texto o sin enlace.", { item: ci, field: "Texto del botón" });
   return e;
 }
 export const strip = (o) => JSON.parse(JSON.stringify(o, (k, v) => (k.startsWith("_") ? undefined : v)));
