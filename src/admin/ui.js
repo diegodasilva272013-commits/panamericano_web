@@ -47,11 +47,11 @@ export const icon = (name, size = 20) =>
 // ---------- avisos ----------
 let toastBox;
 // action: { label, run } agrega un botón (por ejemplo "Deshacer")
-export function toast(msg, kind = "ok", ms = 4200, action) {
+export function toast(msg, kind = "ok", ms = 3200, action) {
   if (!toastBox) { toastBox = h("div", { class: "toasts", role: "status", "aria-live": "polite" }); document.body.append(toastBox); }
   toastBox.querySelectorAll(".toast").forEach((o) => o.remove()); // un solo aviso a la vez: el nuevo reemplaza al anterior
   const close = () => { t.classList.add("is-out"); setTimeout(() => t.remove(), 300); };
-  const t = h("div", { class: `toast toast--${kind}` }, h("span", {}, msg),
+  const t = h("div", { class: `toast toast--${kind}`, title: "Tocá para cerrar", onclick: () => close() }, h("span", {}, msg),
     action && h("button", { type: "button", class: "toast__act", onclick: () => { action.run(); close(); } }, icon("undo", 15), action.label));
   toastBox.append(t);
   setTimeout(close, action ? Math.max(ms, 8000) : ms);
@@ -103,6 +103,12 @@ export function check({ label, value, onChange }) {
 export function group(title, desc, ...kids) {
   return h("section", { class: "card" },
     h("header", { class: "card__head" }, h("h3", {}, title), desc && h("p", {}, desc)),
+    h("div", { class: "card__body" }, ...kids));
+}
+// igual que group, pero con una vista previa en vivo pegada bajo el título
+export function groupAside(title, desc, aside, ...kids) {
+  return h("section", { class: "card card--aside" },
+    h("header", { class: "card__head" }, h("h3", {}, title), desc && h("p", {}, desc), aside),
     h("div", { class: "card__body" }, ...kids));
 }
 export const kb = (n) => (n > 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.round(n / 1024) + " KB");

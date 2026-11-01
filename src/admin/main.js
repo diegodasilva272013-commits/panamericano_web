@@ -276,7 +276,6 @@ function shell(pending) {
       h("button", { type: "button", class: "side__search", onclick: palette }, icon("search", 17), h("span", {}, "Ir a…"), h("kbd", {}, "Ctrl K")),
       navEl,
       h("div", { class: "side__foot" }, h("small", {}, user.email),
-        h("button", { type: "button", class: "link", onclick: () => help(SECTIONS.find((s) => s.id === current) || SECTIONS[0]) }, icon("preguntas", 17), "Ayuda"),
         h("a", { class: "link only-m", href: "/", target: "_blank", rel: "noopener" }, icon("external", 16), "Ver la web"),
         h("button", { type: "button", class: "link", onclick: async () => {
           if (isDirty && !(await confirmBox("Hay cambios sin publicar. Si salís se pierden. ¿Salir igual?", "Salir"))) return;

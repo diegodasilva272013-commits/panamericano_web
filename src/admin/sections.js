@@ -1,4 +1,4 @@
-import { h, field, check, group, listEditor, imageField, confirmBox, toast, icon } from "./ui.js";
+import { h, field, check, group, groupAside, listEditor, imageField, confirmBox, toast, icon } from "./ui.js";
 import { listHistory } from "./api.js";
 import { heroVideoTool } from "./hero-video.js";
 
@@ -23,6 +23,41 @@ export function parseTimes(text) {
 const stopsToText = (r) => (r.stops || []).join(", ");
 const parseStops = (s) => String(s).split(/[,;\n]+/).map((x) => x.trim()).filter(Boolean);
 
+/* ---------- vistas previas en vivo (van en la columna izquierda, pegadas mientras se escribe) ---------- */
+function textPreview(draft, fields) {
+  const el = h("div", { class: "tpv", "aria-label": "Así se ve en la web" });
+  const update = () => {
+    const vals = fields.map(([p, l]) => ({ l, v: get(draft, p) || "" }));
+    const titles = vals.filter((x) => /^Título/.test(x.l));
+    el.replaceChildren(h("span", { class: "tpv__tag" }, "Así se ve en la web"),
+      ...titles.map((x, i) => h("p", { class: "tpv__t" + (i ? " is-2" : "") }, x.v || "…")),
+      ...vals.filter((x) => !/^Título/.test(x.l)).map((x) => (/botón/i.test(x.l) ? h("span", { class: "tpv__btn" }, x.v || "…") : h("p", { class: "tpv__p" }, x.v || "…"))));
+  };
+  update();
+  return { el, update };
+}
+function contactPreview(site) {
+  const el = h("div", { class: "tpv", "aria-label": "Así se ve en la web" });
+  const update = () => el.replaceChildren(h("span", { class: "tpv__tag" }, "Así se ve en la web"),
+    h("p", { class: "tpv__t" }, site.phoneLabel || "…"), h("span", { class: "tpv__btn" }, "WhatsApp +" + (site.whatsapp || "…")),
+    h("p", { class: "tpv__p" }, site.address || "…"), h("p", { class: "tpv__p" }, site.footerNote || ""));
+  update();
+  return { el, update };
+}
+function departuresBoard(routes) {
+  const el = h("div", { class: "board board--aside", "aria-label": "Así se ve en la web" });
+  const update = () => {
+    const nd = nextDepartures(routes, 4);
+    el.replaceChildren(h("span", { class: "tpv__tag tpv__tag--dark" }, nd.tomorrow ? "Así se ve en la web · mañana" : "Así se ve en la web · ahora"),
+      ...(nd.list.length ? nd.list.map((x, i) => h("div", { class: "board__line" + (i === 0 ? " is-next" : "") },
+        h("span", { class: "board__time" }, x.t, x.r.days?.[x.t] ? "*" : ""),
+        h("span", { class: "board__dest" }, h("strong", {}, `${x.r.from || "Origen"} → ${x.r.to || "Destino"}`), x.r.service && h("small", {}, x.r.service))))
+        : [h("p", { class: "empty" }, "Todavía no hay horarios.")]));
+  };
+  update();
+  return { el, update };
+}
+
 /* ---------- textos: esquema de campos ---------- */
 const TEXT_GROUPS = [
   ["Menú superior", "Los nombres de los enlaces de arriba.", [["texts.nav.horarios", "Horarios"], ["texts.nav.destinos", "Destinos"], ["texts.nav.reservar", "Reservar"], ["texts.nav.antes", "Antes de viajar"], ["texts.nav.contacto", "Contacto"]]],
@@ -39,8 +74,9 @@ const TEXT_GROUPS = [
 function textsSection({ draft, dirty }) {
   const wrap = h("div", { class: "stack" });
   for (const [title, desc, fields] of TEXT_GROUPS) {
-    wrap.append(group(title, desc, h("div", { class: "grid2" }, fields.map(([path, label, long]) =>
-      field({ label, long, rows: 3, value: get(draft, path), onInput: (v) => { set(draft, path, v); dirty(); } })))));
+    const pv = textPreview(draft, fields);
+    wrap.append(groupAside(title, desc, pv.el, h("div", { class: "grid2" }, fields.map(([path, label, long]) =>
+      field({ label, long, rows: 3, value: get(draft, path), onInput: (v) => { set(draft, path, v); dirty(); pv.update(); } })))));
   }
   wrap.append(group("Franja de datos", "Las frases cortas que aparecen debajo del bloque \"Conectamos caminos\" (por ejemplo \"Todos los días\").",
     listEditor({ items: draft.texts.facts, onChange: dirty, addLabel: "Agregar frase", make: () => "", max: 6, title: (_, i) => `Frase ${i + 1}`,
@@ -53,7 +89,7 @@ function heroSection(ctx) {
   const { draft, dirty } = ctx; const hero = draft.hero;
   return h("div", { class: "stack" },
     group("Titular de entrada", "Lo primero que se ve al abrir la web.", h("div", { class: "grid2" },
-      field({ label: "Titular", value: hero.headline, validate: (v) => (v.trim() ? "" : "Falta el titular."), onInput: (v) => { hero.headline = v; dirty(); } }),
+      field({ label: "Titular", value: hero.headline, validate: (v) => (v.trim() ? "" : "Falta el titular. Es la frase grande de la portada."), onInput: (v) => { hero.headline = v; dirty(); } }),
       field({ label: "Bajada", value: hero.subheadline, onInput: (v) => { hero.subheadline = v; dirty(); } }),
       field({ label: "Invitación a scrollear", value: hero.hint, onInput: (v) => { hero.hint = v; dirty(); } }))),
     group("Botones de la portada", "Los botones debajo del titular. El enlace puede ser una sección (#horarios), una web (https://…) o un teléfono (tel:+54…).",
@@ -185,8 +221,10 @@ function timesBoard(r, onChange, others) {
 }
 
 /* ---------- horarios ---------- */
-function routesSection({ draft, dirty }) {
+function routesSection({ draft, dirty: baseDirty }) {
   const routes = draft.routes;
+  let board;
+  const dirty = () => { baseDirty(); board?.update(); };
   const origins = () => [...new Set(routes.map((r) => r.from).filter(Boolean))];
   const dl = h("datalist", { id: "origins-dl" }, origins().map((o) => h("option", { value: o })));
   const list = listEditor({
@@ -200,15 +238,16 @@ function routesSection({ draft, dirty }) {
       h("details", { class: "adv svc__more", open: !(r.from && r.to) }, h("summary", {}, "Datos del servicio: origen, destino y paradas"),
         h("div", { class: "svc__fields" },
           h("div", { class: "grid2" },
-            field({ label: "Sale desde (origen)", value: r.from, hint: "Elegí uno existente o escribí uno nuevo.", list: "origins-dl", validate: (v) => (v.trim() ? "" : "Falta el origen."), onInput: (v) => { r.from = v; dirty(); } }),
+            field({ label: "Sale desde (origen)", value: r.from, hint: "Elegí uno existente o escribí uno nuevo.", list: "origins-dl", validate: (v) => (v.trim() ? "" : "Falta el origen. Escribí de dónde sale, por ejemplo San Salvador de Jujuy."), onInput: (v) => { r.from = v; dirty(); } }),
             field({ label: "Nombre del servicio", value: r.service, hint: "Por ejemplo: Ruta 9", onInput: (v) => { r.service = v; dirty(); } }),
-            field({ label: "Destino final (se ve en el tablero)", value: r.to, hint: "Podés terminar con * si no todas las salidas llegan hasta ahí.", validate: (v) => (v.trim() ? "" : "Falta el destino final."), onInput: (v) => { r.to = v; dirty(); } }),
+            field({ label: "Destino final (se ve en el tablero)", value: r.to, hint: "Podés terminar con * si no todas las salidas llegan hasta ahí.", validate: (v) => (v.trim() ? "" : "Falta el destino final. Escribí a dónde llega, por ejemplo La Quiaca."), onInput: (v) => { r.to = v; dirty(); } }),
             field({ label: "Pueblos del camino (texto del tablero)", value: r.via, hint: "Opcional. Por ejemplo: Tilcara · Humahuaca.", onInput: (v) => { r.via = v; dirty(); } })),
           field({ label: "Paradas, en orden de viaje", value: stopsToText(r), long: true, rows: 2, hint: "Separadas por coma. Son los lugares a los que se puede viajar con este servicio.", validate: (v) => (parseStops(v).length ? "" : "Agregá al menos una parada."), onInput: (v) => { r.stops = parseStops(v); dirty(); } }),
           field({ label: "Nota (se muestra debajo)", long: true, rows: 2, value: r.note, onInput: (v) => { r.note = v; dirty(); } })))),
   });
+  board = departuresBoard(routes);
   return h("div", { class: "stack" }, dl,
-    group("Tus servicios", `${routes.length} servicios, ${routes.reduce((n, r) => n + (r.times?.length || 0), 0)} salidas por día. Buscá el servicio y tocá una hora para cambiarla.`, list));
+    groupAside("Tus servicios", `${routes.length} servicios, ${routes.reduce((n, r) => n + (r.times?.length || 0), 0)} salidas por día. Buscá el servicio y tocá una hora para cambiarla.`, board.el, list));
 }
 
 /* ---------- destinos ---------- */
@@ -220,7 +259,7 @@ function destinationsSection({ draft, dirty }) {
         imageField({ label: "Foto", url: d.image, maxWidth: 1100, hint: "Se optimiza sola. Mejor si es vertical o cuadrada.", onChange: (u) => { d.image = u; dirty(); } }),
         h("div", {},
           h("div", { class: "grid2" },
-            field({ label: "Nombre", value: d.name, validate: (v) => (v.trim() ? "" : "Falta el nombre."), onInput: (v) => { d.name = v; dirty(); } }),
+            field({ label: "Nombre", value: d.name, validate: (v) => (v.trim() ? "" : "Falta el nombre. Escribí el del lugar, por ejemplo Tilcara."), onInput: (v) => { d.name = v; dirty(); } }),
             field({ label: "Zona (ej. Quebrada)", value: d.tag, onInput: (v) => { d.tag = v; dirty(); } })),
           field({ label: "Descripción corta", long: true, rows: 2, value: d.text, onInput: (v) => { d.text = v; dirty(); } }))) })));
 }
@@ -257,10 +296,12 @@ function boardSection({ draft, dirty }) {
 }
 
 /* ---------- contacto ---------- */
-function contactSection({ draft, dirty }) {
+function contactSection({ draft, dirty: baseDirty }) {
   const site = draft.site;
+  const cpv = contactPreview(site);
+  const dirty = () => { baseDirty(); cpv.update(); };
   return h("div", { class: "stack" },
-    group("Datos de contacto", "", h("div", { class: "grid2" },
+    groupAside("Datos de contacto", "", cpv.el, h("div", { class: "grid2" },
       field({ label: "WhatsApp (solo números, con código de país)", value: site.whatsapp, mono: true, hint: "Ejemplo: 5493884640178", validate: (v) => (/^\d{10,15}$/.test(v.replace(/\D/g, "")) ? "" : "Tiene que tener entre 10 y 15 números."), onInput: (v) => { site.whatsapp = v.replace(/\D/g, ""); dirty(); } }),
       field({ label: "Teléfono central", value: site.phoneLabel, hint: "Con código de área, por ejemplo 0388 425-4331. El botón \"Llamar\" se arma solo.", validate: (v) => (v.replace(/\D/g, "").length >= 8 ? "" : "Escribí el teléfono con código de área."),
         onInput: (v) => { site.phoneLabel = v; const d = v.replace(/\D/g, "").replace(/^0/, ""); site.phoneTel = d ? "+" + (d.startsWith("54") ? d : "54" + d) : ""; dirty(); } }),
