@@ -497,3 +497,16 @@ kbd{font:600 11px var(--f-text);padding:3px 7px;border-radius:6px;background:rgb
   .top .state.is-ok::before{display:none}
   .layout{padding-bottom:124px}
 }
+
+/* ---- undécima tanda: advertencias suaves, sin conexión, detalles de celular ---- */
+.warn{display:flex;align-items:flex-start;gap:8px;color:#7a4e00;font-size:14px;font-weight:600;line-height:1.4}
+.warn:empty{display:none}
+.warn:not(:empty)::before{content:"";flex:none;width:16px;height:16px;margin-top:2px;border-radius:50%;background:#e8a400 url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Cpath d=%27M8 4v5M8 11.6v.1%27 stroke=%27white%27 stroke-width=%271.8%27 stroke-linecap=%27round%27/%3E%3C/svg%3E") center/16px no-repeat}
+.netbar{margin:20px clamp(20px,3.4vw,48px) 0;padding:12px 18px;border-radius:12px;background:#eef1f6;box-shadow:inset 0 0 0 1px #c3cddf;color:#1f2b45;font-size:14px;font-weight:600}
+.netbar[hidden]{display:none}
+.errbar{margin-bottom:16px}
+@media(max-width:900px){
+  .top .state.is-dirty::before{display:none}
+  .errbar{position:static}
+  .netbar{margin:16px 20px 0}
+}

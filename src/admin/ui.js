@@ -15,7 +15,7 @@ export function h(tag, attrs, ...kids) {
 }
 
 // los errores de red se explican en llano (nunca "TypeError: Failed to fetch")
-export const plainErr = (e) => (/fetch|network|conexi|tard|abort|load failed|offline/i.test(String(e?.message || e)) ? "No hay conexión con la base de datos. Revisá tu internet y probá de nuevo." : /rate limit|too many/i.test(String(e?.message || e)) ? "Hiciste muchos intentos seguidos. Esperá unos minutos y probá de nuevo." : /not confirmed/i.test(String(e?.message || e)) ? "Esa cuenta todavía no confirmó su email." : String(e?.message || e));
+export const plainErr = (e) => (/fetch|network|conexi|tard|abort|load failed|offline/i.test(String(e?.message || e)) ? "No hay conexión con la base de datos. Revisá tu internet y probá de nuevo." : /row-level security|permission denied|42501/i.test(String(e?.message || e)) ? "Tu cuenta no tiene permiso para guardar. Pedile acceso a quien administra la web." : /jwt|session|expired/i.test(String(e?.message || e)) ? "Tu sesión venció. Volvé a entrar: tus cambios quedan guardados en este navegador." : /rate limit|too many/i.test(String(e?.message || e)) ? "Hiciste muchos intentos seguidos. Esperá unos minutos y probá de nuevo." : /not confirmed/i.test(String(e?.message || e)) ? "Esa cuenta todavía no confirmó su email." : String(e?.message || e));
 
 // ---------- iconos (un solo trazo, mismo grosor) ----------
 const ICONS = {
@@ -52,6 +52,16 @@ export const icon = (name, size = 20) =>
 let toastBox = h("div", { class: "toasts", role: "status", "aria-live": "polite" }); document.body.append(toastBox);
 // main.js registra acá el deshacer global, para que los avisos "Deshacer" usen el mismo historial
 export const hooks = {};
+// Avisa con "Deshacer" y solo deshace si NADA más cambió después (si no, explica y no toca nada)
+export function undoToast(msg, mutate) {
+  hooks.flush?.();
+  const at = hooks.pos ? hooks.pos() : -1;
+  mutate();
+  toast(msg, "ok", 8000, { label: "Deshacer", run: () => {
+    hooks.flush?.();
+    if (hooks.pos && hooks.pos() === at + 1) hooks.undo(); else toast("Después de eso hiciste otros cambios. Usá la flecha de arriba para ir paso a paso.", "ok", 6000);
+  } });
+}
 // action: { label, run } agrega un botón (por ejemplo "Deshacer")
 export function toast(msg, kind = "ok", ms = 3200, action) {
   if (!toastBox) { toastBox = h("div", { class: "toasts", role: "status", "aria-live": "polite" }); document.body.append(toastBox); }
@@ -90,7 +100,7 @@ export function confirmBox(msg, okLabel = "Aceptar", cancelLabel = "Cancelar") {
 let uid = 0;
 // validate(valor) -> texto del problema o "": se muestra al salir del campo, no recién al publicar
 // help: explicación corta que se abre con un "?" junto a la etiqueta (para los campos que no se entienden solos)
-export function field({ label, hint, help, value, onInput, long, type = "text", placeholder, rows = 3, mono, error, list, validate }) {
+export function field({ label, hint, help, value, onInput, long, type = "text", placeholder, rows = 3, mono, error, list, validate, soft }) {
   const id = `f${++uid}`;
   const input = long
     ? h("textarea", { id, rows, placeholder, class: mono ? "mono" : "" }, value ?? "")
@@ -100,9 +110,12 @@ export function field({ label, hint, help, value, onInput, long, type = "text", 
   const q = help ? h("button", { type: "button", class: "qmark", title: "¿Qué es esto?", "aria-label": `¿Qué es "${label}"?`, "aria-expanded": "false",
     onclick: () => { note.hidden = !note.hidden; q.setAttribute("aria-expanded", String(!note.hidden)); } }, "?") : null;
   const box = h("div", { class: "field" + (error ? " is-bad" : "") }, h("div", { class: "field__lab" }, h("label", { for: id }, label), q), note, input, hint && h("small", { class: "hint", id: id + "-h" }, hint), err);
-  input.setAttribute("aria-describedby", [help ? id + "-n" : "", hint ? id + "-h" : "", id + "-e"].filter(Boolean).join(" "));
+  input.setAttribute("aria-describedby", [help ? id + "-n" : "", hint ? id + "-h" : "", id + "-e"].filter(Boolean).join(" ") + " " + id + "-w");
   const verify = () => { const m = validate ? validate(input.value) : ""; err.textContent = m || ""; box.classList.toggle("is-bad", !!m); input.setAttribute("aria-invalid", m ? "true" : "false"); };
-  input.addEventListener("input", () => { onInput(input.value, input); if (box.classList.contains("is-bad")) verify(); });
+  const warn = h("small", { class: "warn", id: id + "-w" });
+  const verifySoft = () => { warn.textContent = soft ? soft(input.value) || "" : ""; };
+  box.append(warn); verifySoft();
+  input.addEventListener("input", () => { onInput(input.value, input); if (box.classList.contains("is-bad")) verify(); if (soft) verifySoft(); });
   if (validate) input.addEventListener("blur", verify);
   return box;
 }
@@ -127,24 +140,26 @@ export const kb = (n) => (n > 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.
 // ---------- lista editable (subir, bajar, quitar, agregar) ----------
 export function listEditor({ id, items, render, onChange, addLabel = "Agregar", make, min = 0, max = 99, title, sub, empty = "Todavía no hay nada.", extra }) {
   const box = h("div", { class: "list", "data-list": id || null });
+  // después de subir, bajar, duplicar o quitar, el foco del teclado queda en el mismo tipo de botón
+  const focusAct = (idx, act) => { const it = box.querySelectorAll(":scope > .item")[idx]; (it?.querySelector(`[data-act="${act}"]:not(:disabled)`) || it?.querySelector("button:not(:disabled)"))?.focus(); };
   const draw = () => {
     box.replaceChildren();
     if (!items.length) box.append(h("p", { class: "empty" }, empty));
     items.forEach((it, i) => {
-      const move = (d) => { const j = i + d; if (j < 0 || j >= items.length) return; [items[i], items[j]] = [items[j], items[i]]; onChange(); draw(); };
+      const nm = title ? title(it, i) : `elemento ${i + 1}`;
+      const move = (d) => { const j = i + d; if (j < 0 || j >= items.length) return; [items[i], items[j]] = [items[j], items[i]]; onChange(); draw(); focusAct(j, d < 0 ? "up" : "down"); };
       box.append(h("div", { class: "item" },
         h("div", { class: "item__bar" },
           h("span", { class: "item__title" }, h("strong", {}, title ? title(it, i) : `#${i + 1}`), sub && sub(it, i) ? h("small", { class: "item__sub" }, sub(it, i)) : null),
           h("span", { class: "item__btns" },
-            h("button", { type: "button", class: "ico", title: "Duplicar", "aria-label": "Duplicar", disabled: items.length >= max,
-              onclick: () => { const c = structuredClone(it); if (typeof c.id === "string") c.id = "r" + Math.random().toString(36).slice(2, 7); delete c._bad; items.splice(i + 1, 0, c); onChange(); draw(); } }, icon("copy", 17)),
-            h("button", { type: "button", class: "ico", title: "Subir", "aria-label": "Subir", disabled: i === 0, onclick: () => move(-1) }, icon("up", 17)),
-            h("button", { type: "button", class: "ico", title: "Bajar", "aria-label": "Bajar", disabled: i === items.length - 1, onclick: () => move(1) }, icon("down", 17)),
-            h("button", { type: "button", class: "ico ico--del", title: "Quitar", "aria-label": "Quitar", disabled: items.length <= min,
+            h("button", { type: "button", class: "ico", title: "Duplicar", "data-act": "dup", "aria-label": `Duplicar ${nm}`, disabled: items.length >= max,
+              onclick: () => { const c = structuredClone(it); if (typeof c.id === "string") c.id = "r" + Math.random().toString(36).slice(2, 7); delete c._bad; items.splice(i + 1, 0, c); onChange(); draw(); focusAct(i + 1, "dup"); } }, icon("copy", 17)),
+            h("button", { type: "button", class: "ico", title: "Subir", "data-act": "up", "aria-label": `Subir ${nm}`, disabled: i === 0, onclick: () => move(-1) }, icon("up", 17)),
+            h("button", { type: "button", class: "ico", title: "Bajar", "data-act": "down", "aria-label": `Bajar ${nm}`, disabled: i === items.length - 1, onclick: () => move(1) }, icon("down", 17)),
+            h("button", { type: "button", class: "ico ico--del", title: "Quitar", "data-act": "del", "aria-label": `Quitar ${nm}`, disabled: items.length <= min,
               onclick: () => {
                 // sin pregunta: se quita y queda a mano "Deshacer"
-                const [gone] = items.splice(i, 1); onChange(); draw();
-                toast("Quitaste un elemento.", "ok", 8000, { label: "Deshacer", run: () => { if (hooks.undo) hooks.undo(); else { items.splice(i, 0, gone); onChange(); draw(); } } });
+                undoToast(`Quitaste "${nm}".`, () => { items.splice(i, 1); onChange(); draw(); focusAct(Math.min(i, items.length - 1), "del"); });
               } }, icon("x", 17)))),
         render(it, i, draw)));
     });

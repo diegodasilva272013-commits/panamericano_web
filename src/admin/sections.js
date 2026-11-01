@@ -1,4 +1,4 @@
-import { h, field, check, group, groupAside, listEditor, imageField, confirmBox, toast, icon, hooks } from "./ui.js";
+import { h, field, check, group, groupAside, listEditor, imageField, confirmBox, toast, icon, undoToast } from "./ui.js";
 import { listHistory } from "./api.js";
 import { heroVideoTool } from "./hero-video.js";
 
@@ -181,6 +181,9 @@ const hhmm = (m) => `${String(Math.floor(((m % 1440) + 1440) % 1440 / 60)).padSt
 const readTime = (s) => { const m = String(s).trim().match(/^(\d{1,2})[:.]?(\d{2})$/); return m && +m[1] < 24 && +m[2] < 60 ? `${m[1].padStart(2, "0")}:${m[2]}` : null; };
 
 // Horas como fichas sobre el tablero oscuro. Tocar una abre una ventanita pegada a ella (sin mover las demás).
+// la ventanita de hora que esté abierta (para confirmarla antes de publicar)
+let activeCommit = null;
+export const commitPendingEdit = () => (activeCommit ? activeCommit() : true);
 function timesBoard(r, onChange, others, onDraw) {
   const chips = h("div", { class: "tb__chips" });
   const count = h("small", { class: "tb__count" });
@@ -191,7 +194,7 @@ function timesBoard(r, onChange, others, onDraw) {
   const changed = () => { r._bad = undefined; r.times = [...new Set(r.times)].sort(); ta.value = timesToText(r); err.textContent = ""; onChange(); draw(); };
   const snap = () => ({ times: [...r.times], days: r.days ? { ...r.days } : undefined });
   const restore = (s) => { r.times = s.times; setDays(r, s.days); changed(); };
-  const undoable = (msg, fn) => { const s = snap(); fn(); toast(msg, "ok", 8000, { label: "Deshacer", run: () => (hooks.undo ? hooks.undo() : restore(s)) }); };
+  const undoable = (msg, fn) => undoToast(msg, fn);
 
   const cell = (t, i) => {
     const btn = h("button", { type: "button", class: "tb__chip" + (open === i ? " is-open" : ""), "aria-expanded": String(open === i), "aria-haspopup": "dialog", title: "Tocá para cambiar la hora o quitarla",
@@ -212,7 +215,7 @@ function timesBoard(r, onChange, others, onDraw) {
       r.times[i] = nt; setDays(r, days); open = -1; refocus = nt; changed();
       return true;
     };
-    commitOpen = done;
+    commitOpen = done; activeCommit = done;
     const drop = () => undoable(`Quitaste la salida de las ${t}.`, () => { const days = { ...(r.days || {}) }; delete days[t]; setDays(r, days); r.times.splice(i, 1); open = -1; changed(); });
     const keys = (e) => { if (e.key === "Enter") { e.preventDefault(); done(); } else if (e.key === "Escape") { e.stopPropagation(); open = -1; refocus = t; draw(); } };
     [tIn, dIn].forEach((x) => x.addEventListener("keydown", keys));
@@ -263,6 +266,7 @@ function timesBoard(r, onChange, others, onDraw) {
   });
 
   const draw = () => {
+    if (activeCommit && activeCommit === commitOpen) activeCommit = null;
     commitOpen = null;
     chips.replaceChildren(...(r.times.length ? r.times.map(cell) : [h("em", { class: "tb__empty" }, "Todavía no hay horarios. Escribí el primero abajo.")]));
     count.textContent = `${r.times.length} ${r.times.length === 1 ? "salida" : "salidas"} por día`;
@@ -335,7 +339,7 @@ function destinationsSection({ draft, dirty: baseDirty }) {
         imageField({ label: "Foto", url: d.image, maxWidth: 1100, hint: "Se optimiza sola. Mejor si es vertical o cuadrada.", onChange: (u) => { d.image = u; dirty(); } }),
         h("div", {},
           h("div", { class: "grid2" },
-            field({ label: "Nombre", value: d.name, list: "places-dl", validate: (v) => (!v.trim() ? "Falta el nombre. Escribí el del lugar, por ejemplo Tilcara." : knownPlace(draft, v) ? "" : "Este nombre no coincide con ninguna parada de Horarios: el botón «Ver horarios» no va a encontrar salidas."), onInput: (v) => { d.name = v; dirty(); } }),
+            field({ label: "Nombre", value: d.name, list: "places-dl", validate: (v) => (v.trim() ? "" : "Falta el nombre. Escribí el del lugar, por ejemplo Tilcara."), soft: (v) => (!v.trim() || knownPlace(draft, v) ? "" : "Ojo: este nombre no coincide con ninguna parada de Horarios, así que el botón «Ver horarios» no va a encontrar salidas."), onInput: (v) => { d.name = v; dirty(); } }),
             field({ label: "Zona (ej. Quebrada)", help: "Es la palabra chica que aparece sobre el nombre en la tarjeta del destino. Por ejemplo: Quebrada, Valle o Puna.", value: d.tag, onInput: (v) => { d.tag = v; dirty(); } })),
           field({ label: "Descripción corta", long: true, rows: 2, value: d.text, onInput: (v) => { d.text = v; dirty(); } }))) })));
 }
@@ -488,8 +492,9 @@ export function validate(d) {
   const fi = d.faq.findIndex((f) => !(f[0]?.trim() && f[1]?.trim()));
   if (fi >= 0) add("contacto", "Preguntas: hay preguntas o respuestas vacías.", { item: fi, list: "faq", field: d.faq[fi][0]?.trim() ? "Respuesta" : "Pregunta" });
   if (!d.hero.headline?.trim()) add("hero", "Portada: falta el titular.", { field: "Titular" });
-  const ci = d.hero.ctas.findIndex((c) => !(c.label?.trim() && c.href?.trim()));
-  if (ci >= 0) add("hero", "Portada: hay botones sin texto o sin enlace.", { item: ci, list: "ctas", field: "Texto del botón" });
+  const hrefOk = (v) => /^#\w+/.test(v) || /^tel:\+?\d{8,}/.test(v) || /^https?:\/\/[^\s/]+\.[^\s/]+/.test(v);
+  const ci = d.hero.ctas.findIndex((c) => !(c.label?.trim() && hrefOk(String(c.href || "").trim())));
+  if (ci >= 0) add("hero", "Portada: hay botones sin texto o con un enlace incompleto.", { item: ci, list: "ctas", field: "Texto del botón" });
   return e;
 }
 export const strip = (o) => JSON.parse(JSON.stringify(o, (k, v) => (k.startsWith("_") ? undefined : v)));

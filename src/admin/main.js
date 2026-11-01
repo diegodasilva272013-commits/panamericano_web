@@ -1,6 +1,6 @@
 import { configured, getSession, signIn, signOut, isAdmin, fetchRemote, withDefaults, saveContent } from "./api.js";
-import { h, toast, confirmBox, icon, plainErr, hooks } from "./ui.js";
-import { SECTIONS, validate, strip, fmtDate, fmtShort, nextDepartures } from "./sections.js";
+import { h, toast, confirmBox, icon, plainErr, hooks, undoToast } from "./ui.js";
+import { SECTIONS, validate, strip, fmtDate, fmtShort, nextDepartures, commitPendingEdit } from "./sections.js";
 
 const app = document.getElementById("app");
 
@@ -12,7 +12,7 @@ const store = {
 };
 const DRAFT_KEY = "pm-admin-draft";
 
-let user = null, draft = null, remoteData = null, lastPub = null, isDirty = false, current = store.get("pm-admin-section") || "resumen";
+let user = null, draft = null, remoteData = null, lastPub = null, lastPubRaw = null, netBar, isDirty = false, current = store.get("pm-admin-section") || "resumen";
 let saveBtn, discardBtn, statusEl, topEl, sideEl, navEl, goto, redraw, stashTimer, paintTimer, histTimer, baseJson = {};
 let undoBtn, redoBtn, errBar, showErrBar = true, histRestored = false; // la barra de errores se muestra siempre que falte algo
 
@@ -33,15 +33,21 @@ const paintUndo = () => {
 const histSave = () => { const n = Math.max(0, hist.length - 20); store.set(HIST_KEY, JSON.stringify({ u: user?.id, b: lastPub ? +lastPub : 0, hist: hist.slice(n), hi: hi - n })); };
 const histReset = () => { hist = [snapNow()]; hi = 0; paintUndo(); histSave(); };
 const histPush = () => { const s = snapNow(); if (s !== hist[hi]) { hist = hist.slice(0, hi + 1); hist.push(s); if (hist.length > 100) hist.shift(); hi = hist.length - 1; paintUndo(); histSave(); } };
+const secIdsBetween = (a, b) => { try { const x = JSON.parse(a), y = JSON.parse(b), s = new Set(); for (const k of Object.keys(KEY2SEC)) if (JSON.stringify(x[k]) !== JSON.stringify(y[k])) s.add(KEY2SEC[k]); return [...s]; } catch { return []; } };
 const histGo = (d) => {
   clearTimeout(histTimer); histPush(); // lo último que escribiste entra al historial antes de volver
   const j = hi + d; if (j < 0 || j >= hist.length) return;
+  const was = hist[hi];
+  const ids = secIdsBetween(was, hist[j]);
+  if (ids.length && !ids.includes(current)) { current = ids[0]; store.set("pm-admin-section", current); } // si lo deshecho está en otra pantalla, se va ahí
   document.querySelectorAll(".toast").forEach((t) => t.remove()); // los "Deshacer" de los avisos quedan viejos: no deshacer de más
   hi = j; draft = withDefaults(JSON.parse(hist[hi])); isDirty = changedSections().size > 0;
   clearTimeout(stashTimer); if (isDirty) stashDraft(); else store.del(DRAFT_KEY);
   const fields = () => [...document.querySelectorAll(".main input, .main textarea")];
   const at = fields().indexOf(document.activeElement); // en cuál campo estaba el cursor
   redraw(); paintStatus(); paintUndo(); histSave();
+  const lbl = secLabelsBetween(was, hist[hi]);
+  if (lbl) toast(`${d < 0 ? "Deshiciste" : "Rehiciste"} el cambio en ${lbl}.`, "ok", 5000, { label: d < 0 ? "Rehacer" : "Deshacer", icon: d < 0 ? "redo" : "undo", run: () => histGo(-d) });
   if (at >= 0) { const el = fields()[at]; if (el) { el.focus({ preventScroll: true }); try { el.setSelectionRange(el.value.length, el.value.length); } catch { /* campo sin selección */ } } }
 };
 
@@ -50,6 +56,8 @@ const plain = plainErr;
 // "hace 5 min" en vez de una fecha larga (pasado el día, la fecha corta)
 const ago = (d) => { const m = Math.round((Date.now() - +d) / 60000); return m < 1 ? "hace un momento" : m < 60 ? `hace ${m} min` : m < 1440 ? `hace ${Math.round(m / 60)} h` : "el " + fmtShort(d); };
 hooks.undo = () => histGo(-1);
+hooks.flush = () => { clearTimeout(histTimer); histPush(); };
+hooks.pos = () => hi;
 const mark = '<svg viewBox="0 0 24 24" width="26" height="26"><rect width="24" height="24" rx="7" fill="#f4b400"/><path d="M2 18c7 1 14-3 20-11v5C16 19 9 22 2 21z" fill="#171200"/><path d="M2 21c7 1 14-3 20-11" stroke="#d8261f" stroke-width="2.2" fill="none"/></svg>';
 const brand = () => h("div", { class: "brand", html: mark + "<span>Panamericano</span>" });
 const sectionLabel = (id) => SECTIONS.find((s) => s.id === id)?.label || id;
@@ -127,8 +135,8 @@ function welcome(force) {
   store.set("pm-admin-welcome", "1");
   confirmBox(h("div", { class: "help" }, h("h3", {}, "Bienvenida"), h("p", {}, "Tres cosas para saber:"),
     h("ol", {}, h("li", {}, "Elegí qué querés cambiar en el menú o en el buscador (en la computadora: Ctrl K)."),
-      h("li", {}, "Hacé el cambio. A la izquierda ves cómo queda en la web."),
-      h("li", {}, "Tocá \"Guardar y publicar\". Si te equivocás, \"Deshacer\" está arriba."))), "Empezar", "Saltar");
+      h("li", {}, "Hacé el cambio. Donde hay un cartel negro \"Así se ve en la web\", lo ves al instante."),
+      h("li", {}, "Tocá \"Guardar y publicar\". Si te equivocás, tocá la flecha de deshacer de la barra de acciones (o Ctrl+Z)."))), "Empezar", "Saltar");
 }
 
 function deniedScreen(email) {
@@ -140,7 +148,7 @@ function deniedScreen(email) {
 }
 
 /* ---------- panel ---------- */
-const stashDraft = () => { if (user && draft) store.set(DRAFT_KEY, JSON.stringify({ at: Date.now(), user: user.id, data: strip(draft) })); };
+const stashDraft = () => { if (user && draft) store.set(DRAFT_KEY, JSON.stringify({ at: Date.now(), user: user.id, base: lastPubRaw, data: strip(draft) })); };
 const setDirty = () => {
   if (!isDirty) { isDirty = true; paintStatus(); }
   clearTimeout(stashTimer); stashTimer = setTimeout(stashDraft, 700); // borrador automático en este navegador
@@ -175,6 +183,7 @@ function paintStatus() {
 const saveLabel = () => saveBtn.replaceChildren(h("span", { class: "lbl-dirty" }, "Guardar y publicar", h("kbd", { class: "kbd-inline" }, "Ctrl S")), h("span", { class: "lbl-clean" }, "Todo publicado"));
 
 async function publish() {
+  if (!commitPendingEdit()) return; // una hora a medio escribir se confirma antes de publicar
   const errors = validate(draft);
   if (errors.length) {
     const list = h("ul", { class: "errs" }, errors.map((x) => h("li", {},
@@ -186,13 +195,16 @@ async function publish() {
   }
   saveBtn.disabled = true; saveBtn.textContent = "Publicando…"; topEl.classList.add("is-busy");
   try {
-    const cur = await limit(fetchRemote()); // ¿otra persona publicó mientras editabas?
-    if (cur?.updated_at && lastPub && Math.abs(new Date(cur.updated_at) - lastPub) > 2000
-      && !(await confirmBox(`Otra persona publicó cambios el ${fmtShort(cur.updated_at)}. Si publicás ahora, los reemplazás. ¿Publicar igual?`, "Publicar igual", "Cancelar"))) return;
-    const at = await saveContent(strip(draft), user.id);
-    remoteData = strip(draft); lastPub = new Date(at); computeBase(); histSave(); store.del(DRAFT_KEY); clearTimeout(stashTimer);
+    let at;
+    try { at = await saveContent(strip(draft), user.id, lastPubRaw); } // la base solo escribe si nadie publicó desde que cargaste
+    catch (e) {
+      if (e.code !== "CONFLICT") throw e;
+      if (!(await confirmBox("Otra persona publicó cambios mientras editabas. Si publicás ahora, los reemplazás. ¿Publicar igual?", "Publicar igual", "Cancelar"))) return;
+      at = await saveContent(strip(draft), user.id, null);
+    }
+    remoteData = strip(draft); lastPub = new Date(at); lastPubRaw = at; computeBase(); histSave(); store.del(DRAFT_KEY); clearTimeout(stashTimer);
     isDirty = false; paintStatus(); toast("Publicado. La web ya muestra los cambios.");
-  } catch (e) { toast(`No se pudo publicar. ${plain(e)}`, "err", 12000, { label: "Reintentar", icon: "redo", run: () => publish() }); saveBtn.disabled = false; }
+  } catch (e) { const m = plain(e); toast(/^No se pudo/i.test(m) ? m : `No se pudo publicar. ${m}`, "err", 12000, { label: "Reintentar", icon: "redo", run: () => publish() }); saveBtn.disabled = false; }
   finally { saveLabel(); topEl.classList.remove("is-busy"); paintStatus(); }
 }
 
@@ -309,22 +321,23 @@ function shell(pending) {
   saveBtn = h("button", { class: "btn btn--primary", type: "button", onclick: publish }); saveLabel();
   discardBtn = h("button", { class: "btn btn--ghost", type: "button", hidden: true, onclick: () => {
     // sin pregunta: se descarta y queda a mano "Deshacer"
-    const prev = snapNow();
-    draft = withDefaults(structuredClone(remoteData)); isDirty = false; clearTimeout(stashTimer); store.del(DRAFT_KEY); clearTimeout(histTimer); histPush(); paintStatus(); draw();
-    toast("Descartaste los cambios sin publicar.", "ok", 9000, { label: "Deshacer", run: () => { draft = withDefaults(JSON.parse(prev)); isDirty = true; stashDraft(); histPush(); paintStatus(); draw(); } });
+    undoToast("Descartaste los cambios sin publicar.", () => {
+      draft = withDefaults(structuredClone(remoteData)); isDirty = false; clearTimeout(stashTimer); store.del(DRAFT_KEY); clearTimeout(histTimer); histPush(); paintStatus(); draw();
+    });
   } }, h("span", { class: "lbl-long" }, "Descartar cambios"), h("span", { class: "lbl-short" }, "Descartar"));
 
   // borrador de una sesión anterior que no se llegó a publicar
   const recover = pending && h("div", { class: "recover", role: "alert" },
-    h("span", {}, `Tenés cambios sin publicar del ${fmtDate(pending.at)}, guardados en este navegador.`),
+    h("span", {}, pending.stale ? `Tenés un borrador del ${fmtDate(pending.at)}, pero otra persona publicó después. Si lo recuperás, puede reemplazar cambios más nuevos.` : `Tenés cambios sin publicar del ${fmtDate(pending.at)}, guardados en este navegador.`),
     h("span", { class: "recover__act" },
       h("button", { type: "button", class: "btn btn--ghost", onclick: () => { store.del(DRAFT_KEY); histReset(); recover.remove(); } }, "Descartarlos"),
-      h("button", { type: "button", class: "btn", onclick: () => { draft = withDefaults(pending.data); setDirty(); recover.remove(); draw(); } }, "Recuperarlos")));
+      h("button", { type: "button", class: "btn", onclick: () => { draft = withDefaults(pending.data); setDirty(); recover.remove(); draw(); } }, pending.stale ? "Recuperar igual" : "Recuperarlos")));
   // (el historial arranca en lo publicado; al recuperar, el borrador entra como un cambio más)
 
   undoBtn = h("button", { type: "button", class: "ico ico--top", title: "Deshacer (Ctrl+Z)", "aria-label": "Deshacer", disabled: true, onclick: () => histGo(-1) }, icon("undo", 18));
   redoBtn = h("button", { type: "button", class: "ico ico--top", title: "Rehacer (Ctrl+Shift+Z)", "aria-label": "Rehacer", disabled: true, onclick: () => histGo(1) }, icon("redo", 18));
   errBar = h("div", { class: "errbar", role: "status", "aria-live": "polite", hidden: true });
+  netBar = h("div", { class: "netbar", role: "status", hidden: navigator.onLine !== false }, "Sin conexión. Tus cambios se guardan en este navegador y se publican cuando vuelva internet y toques Guardar.");
   topEl = h("header", { class: "top" }, h("div", { class: "busybar", "aria-hidden": "true" }), statusEl, h("span", { class: "top__undo" }, undoBtn, redoBtn), h("a", { class: "link", href: "/", target: "_blank", rel: "noopener" }, "Ver la web", icon("external", 16)), discardBtn, saveBtn);
   sideEl = h("aside", { class: "side" }, h("div", { class: "livery", "aria-hidden": "true" }),
     h("div", { class: "side__bar" }, brand(),
@@ -339,7 +352,7 @@ function shell(pending) {
           if (isDirty) stashDraft();
           isDirty = false; await signOut(); await boot();
         } }, icon("logout", 17), "Cerrar sesión"))));
-  app.replaceChildren(h("div", { class: "layout" }, sideEl, h("div", { class: "content" }, topEl, errBar, recover || null, main)));
+  app.replaceChildren(h("div", { class: "layout" }, sideEl, h("div", { class: "content" }, topEl, netBar, errBar, recover || null, main)));
   if (!histRestored) histReset();
   histRestored = false; draw(); paintStatus(); paintUndo(); welcome();
 }
@@ -356,12 +369,13 @@ async function boot() {
     user = session.user;
     if (!(await limit(isAdmin(user.id)))) return deniedScreen(user.email);
     const remote = await limit(fetchRemote());
-    remoteData = remote?.data ?? null; lastPub = remote?.updated_at ? new Date(remote.updated_at) : null;
+    remoteData = remote?.data ?? null; lastPubRaw = remote?.updated_at || null; lastPub = lastPubRaw ? new Date(lastPubRaw) : null;
     draft = withDefaults(structuredClone(remoteData)); isDirty = false; // copia: editar el borrador no debe tocar lo publicado
     computeBase();
     let pending = null;
     try { pending = JSON.parse(store.get(DRAFT_KEY) || "null"); } catch { pending = null; }
     if (!pending || pending.user !== user.id || JSON.stringify(pending.data) === JSON.stringify(strip(draft))) { if (pending) store.del(DRAFT_KEY); pending = null; }
+    if (pending) pending.stale = !!(pending.base && lastPubRaw && pending.base !== lastPubRaw); // otra persona publicó después de ese borrador
     // si había un historial guardado de esta misma versión, se recupera (deshacer sigue funcionando tras recargar)
     histRestored = false;
     try {
@@ -377,6 +391,7 @@ async function boot() {
 // atajos: Ctrl+S publica, Ctrl+K busca
 const typing = () => { const a = document.activeElement; return !!a && (/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || a.isContentEditable); };
 addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !document.querySelector(".modal, .tb__pop")) document.querySelectorAll(".toast").forEach((t) => t.remove());
   if (e.key === "?" && !typing() && saveBtn?.isConnected && !document.querySelector(".modal")) { e.preventDefault(); shortcuts(); return; }
   if (!(e.ctrlKey || e.metaKey)) return;
   const k = e.key.toLowerCase();
@@ -388,6 +403,7 @@ addEventListener("keydown", (e) => {
   } else if (k === "k" && saveBtn?.isConnected && !document.querySelector(".modal")) { e.preventDefault(); palette(); }
 });
 setInterval(() => { if (statusEl?.isConnected && !isDirty) paintStatus(); }, 30000);
-addEventListener("online", () => { if (document.body.dataset.retry) boot(); });
+addEventListener("online", () => { if (netBar) netBar.hidden = true; if (document.body.dataset.retry) boot(); });
+addEventListener("offline", () => { if (netBar) netBar.hidden = false; });
 addEventListener("beforeunload", (e) => { if (isDirty) { stashDraft(); e.preventDefault(); e.returnValue = ""; } });
 boot();

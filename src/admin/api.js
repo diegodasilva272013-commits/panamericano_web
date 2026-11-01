@@ -33,8 +33,15 @@ export async function fetchRemote() {
 }
 export const withDefaults = (remote) => mergeContent(structuredClone(DEFAULT_CONTENT), remote || {});
 
-export async function saveContent(data, userId) {
+// expectedAt: la versión que cargaste. Si otra persona publicó después, la base no escribe y se avisa (code CONFLICT).
+export async function saveContent(data, userId, expectedAt) {
   const at = new Date().toISOString();
+  if (expectedAt) {
+    const { data: rows, error: e1 } = await sb.from("site_content").update({ data, updated_by: userId, updated_at: at }).eq("id", "main").eq("updated_at", expectedAt).select("updated_at");
+    if (e1) throw new Error("No se pudo guardar: " + e1.message);
+    if (!rows?.length) { const c = new Error("Otra persona publicó antes."); c.code = "CONFLICT"; throw c; }
+    return at;
+  }
   const { error } = await sb.from("site_content").upsert({ id: "main", data, updated_by: userId, updated_at: at }, { onConflict: "id" });
   if (error) throw new Error("No se pudo guardar: " + error.message);
   return at; // la hora exacta que quedó guardada (sirve para detectar si otra persona publicó antes)
