@@ -14,6 +14,27 @@ export function h(tag, attrs, ...kids) {
   return el;
 }
 
+// ---------- iconos (un solo trazo, mismo grosor) ----------
+const ICONS = {
+  hero: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10.5 9.5v5l4-2.5z"/>',
+  textos: '<path d="M5 7V5.5h14V7M12 5.5v13M9 18.5h6"/>',
+  horarios: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  destinos: '<path d="M12 21s6.5-5.6 6.5-11a6.5 6.5 0 1 0-13 0c0 5.4 6.5 11 6.5 11z"/><circle cx="12" cy="10" r="2.3"/>',
+  galeria: '<rect x="3.5" y="4.5" width="17" height="15" rx="3"/><circle cx="9" cy="10" r="1.6"/><path d="M4 17l5-4.5 4 3.5 3-2.5 4 3"/>',
+  abordo: '<rect x="4" y="4" width="16" height="13.5" rx="3"/><path d="M4 11h16M8 20.5v-3M16 20.5v-3"/>',
+  contacto: '<path d="M6.5 4h3L11 8l-2 1.3a10 10 0 0 0 5.7 5.7L16 13l4 1.5v3a2 2 0 0 1-2.2 2A15 15 0 0 1 4.5 6.2 2 2 0 0 1 6.5 4z"/>',
+  preguntas: '<circle cx="12" cy="12" r="8.5"/><path d="M9.7 9.6a2.4 2.4 0 1 1 3.4 2.2c-.8.4-1.1.9-1.1 1.7M12 16.6v.1"/>',
+  historial: '<path d="M4 12a8 8 0 1 0 2.6-5.9L4 8.5M4 4v4.5h4.5M12 8v4.2l2.8 1.6"/>',
+  up: '<path d="M12 19V5m-6 6 6-6 6 6"/>',
+  down: '<path d="M12 5v14m-6-6 6 6 6-6"/>',
+  x: '<path d="M6 6l12 12M18 6 6 18"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  external: '<path d="M8 16 16 8M9 8h7v7"/>',
+  logout: '<path d="M14 5h4a1.5 1.5 0 0 1 1.5 1.5v11A1.5 1.5 0 0 1 18 19h-4M10 8l-4 4 4 4M6 12h10"/>',
+};
+export const icon = (name, size = 20) =>
+  h("span", { class: "i", "aria-hidden": "true", html: `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] || ""}</svg>` });
+
 // ---------- avisos ----------
 let toastBox;
 export function toast(msg, kind = "ok", ms = 4200) {
@@ -55,7 +76,9 @@ export function check({ label, value, onChange }) {
   return h("label", { class: "check" }, input, h("span", {}, label));
 }
 export function group(title, desc, ...kids) {
-  return h("section", { class: "card" }, h("header", { class: "card__head" }, h("h3", {}, title), desc && h("p", {}, desc)), ...kids);
+  return h("section", { class: "card" },
+    h("header", { class: "card__head" }, h("h3", {}, title), desc && h("p", {}, desc)),
+    h("div", { class: "card__body" }, ...kids));
 }
 export const kb = (n) => (n > 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.round(n / 1024) + " KB");
 
@@ -71,14 +94,14 @@ export function listEditor({ items, render, onChange, addLabel = "Agregar", make
         h("div", { class: "item__bar" },
           h("strong", {}, title ? title(it, i) : `#${i + 1}`),
           h("span", { class: "item__btns" },
-            h("button", { type: "button", class: "ico", title: "Subir", "aria-label": "Subir", disabled: i === 0, onclick: () => move(-1) }, "↑"),
-            h("button", { type: "button", class: "ico", title: "Bajar", "aria-label": "Bajar", disabled: i === items.length - 1, onclick: () => move(1) }, "↓"),
+            h("button", { type: "button", class: "ico", title: "Subir", "aria-label": "Subir", disabled: i === 0, onclick: () => move(-1) }, icon("up", 17)),
+            h("button", { type: "button", class: "ico", title: "Bajar", "aria-label": "Bajar", disabled: i === items.length - 1, onclick: () => move(1) }, icon("down", 17)),
             h("button", { type: "button", class: "ico ico--del", title: "Quitar", "aria-label": "Quitar", disabled: items.length <= min,
-              onclick: async () => { if (await confirmBox("¿Quitar este elemento?", "Quitar")) { items.splice(i, 1); onChange(); draw(); } } }, "✕"))),
+              onclick: async () => { if (await confirmBox("¿Quitar este elemento?", "Quitar")) { items.splice(i, 1); onChange(); draw(); } } }, icon("x", 17)))),
         render(it, i, draw)));
     });
     if (items.length < max) box.append(h("div", { class: "list__add" },
-      h("button", { type: "button", class: "btn btn--ghost", onclick: () => { items.push(make()); onChange(); draw(); box.lastElementChild.previousElementSibling?.querySelector("input,textarea")?.focus(); } }, "+ " + addLabel),
+      h("button", { type: "button", class: "btn btn--ghost", onclick: () => { items.push(make()); onChange(); draw(); box.lastElementChild.previousElementSibling?.querySelector("input,textarea")?.focus(); } }, icon("plus", 17), addLabel),
       extra));
   };
   draw();

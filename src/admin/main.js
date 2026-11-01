@@ -1,5 +1,5 @@
 import { configured, getSession, signIn, signOut, isAdmin, fetchRemote, withDefaults, saveContent } from "./api.js";
-import { h, toast, confirmBox } from "./ui.js";
+import { h, toast, confirmBox, icon } from "./ui.js";
 import { SECTIONS, validate, strip } from "./sections.js";
 
 const app = document.getElementById("app");
@@ -36,7 +36,12 @@ function loginScreen(error) {
   } },
     h("div", { class: "field" }, h("label", { for: "em" }, "Email"), email),
     h("div", { class: "field" }, h("label", { for: "pw" }, "Contraseña"), pass), err, btn);
-  app.replaceChildren(h("main", { class: "gate" }, brand(), h("h1", {}, "Panel de administración"), h("p", { class: "lead" }, "Ingresá con tu usuario para editar la web."), form));
+  app.replaceChildren(h("div", { class: "entry" },
+    h("aside", { class: "entry__art" }, brand(),
+      h("div", { class: "entry__copy" },
+        h("p", { class: "entry__big" }, "Horarios, textos y fotos, al día."),
+        h("p", {}, "Todo lo que se ve en la web se edita desde acá."))),
+    h("main", { class: "entry__form" }, h("h1", {}, "Panel de administración"), h("p", { class: "lead" }, "Ingresá con tu usuario para editar la web."), form)));
   email.focus();
 }
 
@@ -84,7 +89,7 @@ function shell() {
     main.replaceChildren(h("h2", { class: "title" }, sec.label), sec.render({ ...ctx, draft }));
     scrollTo(0, y);
   };
-  SECTIONS.forEach((s) => nav.append(h("button", { type: "button", "data-id": s.id, onclick: () => { current = s.id; localStorage.setItem("pm-admin-section", s.id); draw(); scrollTo(0, 0); } }, s.label)));
+  SECTIONS.forEach((s) => nav.append(h("button", { type: "button", "data-id": s.id, onclick: () => { current = s.id; localStorage.setItem("pm-admin-section", s.id); draw(); scrollTo(0, 0); } }, icon(s.id), h("span", {}, s.label))));
 
   statusEl = h("span", { class: "state" });
   saveBtn = h("button", { class: "btn", type: "button", onclick: publish }, "Guardar y publicar");
@@ -93,9 +98,9 @@ function shell() {
       h("div", { class: "side__foot" }, h("small", {}, user.email), h("button", { type: "button", class: "link", onclick: async () => {
         if (isDirty && !(await confirmBox("Hay cambios sin publicar. Si salís se pierden. ¿Salir igual?", "Salir"))) return;
         isDirty = false; await signOut(); await boot();
-      } }, "Cerrar sesión"))),
+      } }, icon("logout", 17), "Cerrar sesión"))),
     h("div", { class: "content" },
-      h("header", { class: "top" }, statusEl, h("a", { class: "link", href: "/", target: "_blank", rel: "noopener" }, "Ver la web ↗"), saveBtn),
+      h("header", { class: "top" }, statusEl, h("a", { class: "link", href: "/", target: "_blank", rel: "noopener" }, "Ver la web", icon("external", 16)), saveBtn),
       main)));
   draw(); paintStatus();
 }
