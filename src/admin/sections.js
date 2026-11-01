@@ -208,6 +208,8 @@ const readTime = (s) => { const m = String(s).trim().match(/^(\d{1,2})[:.]?(\d{2
 // la ventanita de hora que esté abierta (para confirmarla antes de publicar)
 let activeCommit = null;
 export const commitPendingEdit = () => (activeCommit ? activeCommit() : true);
+export const forgetPendingEdit = () => { activeCommit = null; };
+export const changedLabels = (a, b) => changedIds(a, b).map((id) => SECTIONS.find((x) => x.id === id)?.label || id);
 function timesBoard(r, onChange, others, onDraw) {
   const chips = h("div", { class: "tb__chips" });
   const count = h("small", { class: "tb__count" });
@@ -225,6 +227,7 @@ function timesBoard(r, onChange, others, onDraw) {
       onclick: () => {
         if (open === i) { refocus = t; open = -1; draw(); return; }
         if (open !== -1 && commitOpen && !commitOpen()) return; // se guarda lo que se estaba escribiendo
+        if (activeCommit && activeCommit !== commitOpen) activeCommit(); // y si había otra ventanita abierta en otro servicio, también
         open = r.times.indexOf(t); draw();
       } }, t, r.days?.[t] && h("em", {}, r.days[t]));
     if (open !== i) return h("span", { class: "tb__cell" }, btn);
@@ -528,7 +531,7 @@ export function validate(d) {
   if (!d.hero.headline?.trim()) add("hero", "Portada: falta el titular.", { field: "Titular" });
   const hrefOk = (v) => /^#\w+/.test(v) || /^tel:\+?\d{8,}/.test(v) || /^https?:\/\/[^\s/]+\.[^\s/]+/.test(v);
   const ci = d.hero.ctas.findIndex((c) => !(c.label?.trim() && hrefOk(String(c.href || "").trim())));
-  if (ci >= 0) add("hero", "Portada: hay botones sin texto o con un enlace incompleto.", { item: ci, list: "ctas", field: "Texto del botón" });
+  if (ci >= 0) add("hero", "Portada: hay botones sin texto o con un enlace incompleto.", { item: ci, list: "ctas", field: d.hero.ctas[ci].label?.trim() ? "A dónde lleva" : "Texto del botón" });
   return e;
 }
 export const strip = (o) => JSON.parse(JSON.stringify(o, (k, v) => (k.startsWith("_") ? undefined : v)));

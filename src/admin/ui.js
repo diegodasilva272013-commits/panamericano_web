@@ -164,7 +164,7 @@ export function listEditor({ id, items, render, onChange, addLabel = "Agregar", 
         render(it, i, draw)));
     });
     if (items.length < max) box.append(h("div", { class: "list__add" },
-      h("button", { type: "button", class: "btn btn--ghost", onclick: () => { items.push(make()); onChange(); draw(); box.lastElementChild.previousElementSibling?.querySelector("input,textarea")?.focus(); } }, icon("plus", 17), addLabel),
+      h("button", { type: "button", class: "btn btn--ghost", onclick: () => { items.push(make()); onChange(); draw(); box.querySelectorAll(":scope > .item")[items.length - 1]?.querySelector("input,textarea")?.focus(); } }, icon("plus", 17), addLabel),
       extra));
   };
   draw();

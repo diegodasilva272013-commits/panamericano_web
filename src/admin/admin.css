@@ -537,3 +537,4 @@ kbd{font:600 11px var(--f-text);padding:3px 7px;border-radius:6px;background:rgb
 .tpv .tpv__dest{justify-content:flex-start;border-bottom:1px solid rgba(243,239,230,.12)}
 .tpv .tpv__dest:last-child{border-bottom:0}
 .tpv__dtxt{align-items:flex-start;text-align:left}
+.board--aside .tpv__tag{padding-bottom:10px}

@@ -1,6 +1,6 @@
-import { configured, getSession, signIn, signOut, isAdmin, fetchRemote, withDefaults, saveContent } from "./api.js";
+import { configured, getSession, signIn, signOut, isAdmin, fetchRemote, withDefaults, saveContent, listHistory } from "./api.js";
 import { h, toast, confirmBox, icon, plainErr, hooks, undoToast } from "./ui.js";
-import { SECTIONS, KEY2SEC, validate, strip, fmtDate, fmtShort, nextDepartures, commitPendingEdit } from "./sections.js";
+import { SECTIONS, KEY2SEC, validate, strip, fmtDate, fmtShort, nextDepartures, commitPendingEdit, forgetPendingEdit, changedLabels } from "./sections.js";
 
 const app = document.getElementById("app");
 
@@ -14,6 +14,7 @@ const DRAFT_KEY = "pm-admin-draft";
 
 let user = null, draft = null, remoteData = null, lastPub = null, lastPubRaw = null, netBar, isDirty = false, current = store.get("pm-admin-section") || "resumen";
 let saveBtn, discardBtn, statusEl, topEl, sideEl, navEl, goto, redraw, stashTimer, paintTimer, histTimer, baseJson = {};
+let bannerOpen = false; // hay un borrador pendiente esperando que elijas "Recuperar" o "Descartar"
 let undoBtn, redoBtn, errBar, showErrBar = true, histRestored = false; // la barra de errores se muestra siempre que falte algo
 
 /* historial de cambios del borrador: deshacer y rehacer de todo, no solo de lo que se quita */
@@ -169,6 +170,8 @@ function paintErrBar() {
 }
 function paintStatus() {
   if (!statusEl) return;
+  isDirty = changedSections().size > 0; // siempre contra lo publicado: escribir y volver a como estaba no es un cambio
+  if (!isDirty && !bannerOpen) { clearTimeout(stashTimer); store.del(DRAFT_KEY); }
   const ch = isDirty ? [...changedSections()] : [];
   statusEl.title = ch.map(sectionLabel).join(", ");
   statusEl.textContent = isDirty ? (ch.length > 1 ? `Hay cambios sin publicar en ${ch.length} pantallas` : ch.length ? `Hay cambios sin publicar en ${sectionLabel(ch[0])}` : "Hay cambios sin publicar") : lastPub ? `Publicado ${ago(lastPub)}` : "Todo publicado";
@@ -183,7 +186,7 @@ function paintStatus() {
 const saveLabel = () => saveBtn.replaceChildren(h("span", { class: "lbl-dirty" }, "Guardar y publicar", h("kbd", { class: "kbd-inline" }, "Ctrl S")), h("span", { class: "lbl-clean" }, "Todo publicado"));
 
 async function publish() {
-  if (!commitPendingEdit()) return; // una hora a medio escribir se confirma antes de publicar
+  if (!commitPendingEdit()) { toast("Hay una hora a medio escribir que no es válida. Corregila (por ejemplo 14:30) o apretá Esc para cerrarla.", "err", 7000); return; } // una hora a medio escribir se confirma antes de publicar
   const errors = validate(draft);
   if (errors.length) {
     const list = h("ul", { class: "errs" }, errors.map((x) => h("li", {},
@@ -199,11 +202,17 @@ async function publish() {
     try { at = await saveContent(strip(draft), user.id, lastPubRaw); } // la base solo escribe si nadie publicó desde que cargaste
     catch (e) {
       if (e.code !== "CONFLICT") throw e;
-      if (!(await confirmBox("Otra persona publicó cambios mientras editabas. Si publicás ahora, los reemplazás. ¿Publicar igual?", "Publicar igual", "Cancelar"))) return;
+      let detail = "";
+      try { const cur = await limit(fetchRemote()); const labs = changedLabels(remoteData, cur?.data); detail = ` (${fmtShort(cur.updated_at)}${labs.length ? ": cambió " + labs.join(", ") : ""})`; } catch { /* sin detalle */ }
+      if (!(await confirmBox(`Otra persona publicó cambios mientras editabas${detail}. Si publicás ahora, los reemplazás. ¿Publicar igual?`, "Publicar igual", "Cancelar"))) return;
       at = await saveContent(strip(draft), user.id, null);
     }
     remoteData = strip(draft); lastPub = new Date(at); lastPubRaw = at; computeBase(); histSave(); store.del(DRAFT_KEY); clearTimeout(stashTimer);
-    isDirty = false; paintStatus(); toast("Publicado. La web ya muestra los cambios.");
+    isDirty = false; paintStatus();
+    toast("Publicado. La web ya muestra los cambios.", "ok", 9000, { label: "Volver a la anterior", run: async () => {
+      try { const rows = await listHistory(); if (!rows[0]) return toast("No hay una versión anterior guardada."); draft = withDefaults(rows[0].data); setDirty(); histPush(); redraw(); paintStatus(); toast("Cargaste la versión anterior. Tocá Guardar y publicar para que vuelva a verse en la web."); }
+      catch (e) { toast(plain(e), "err", 7000); }
+    } });
   } catch (e) { const m = plain(e); toast(/^No se pudo/i.test(m) ? m : `No se pudo publicar. ${m}`, "err", 12000, { label: "Reintentar", icon: "redo", run: () => publish() }); saveBtn.disabled = false; }
   finally { saveLabel(); topEl.classList.remove("is-busy"); paintStatus(); }
 }
@@ -280,6 +289,7 @@ function shell(pending) {
     replaceDraft: (data) => { draft = withDefaults(data); setDirty(); draw(); },
   };
   const draw = () => {
+    forgetPendingEdit(); // la ventanita de la pantalla anterior ya no existe
     const sec = SECTIONS.find((s) => s.id === current) || SECTIONS[0];
     navEl.querySelectorAll("button[data-id]").forEach((b) => b.setAttribute("aria-current", String(b.dataset.id === sec.id)));
     const y = scrollY;
@@ -333,11 +343,12 @@ function shell(pending) {
   } }, h("span", { class: "lbl-long" }, "Descartar cambios"), h("span", { class: "lbl-short" }, "Descartar"));
 
   // borrador de una sesión anterior que no se llegó a publicar
+  bannerOpen = !!pending;
   const recover = pending && h("div", { class: "recover", role: "alert" },
     h("span", {}, pending.stale ? `Tenés un borrador del ${fmtDate(pending.at)}, pero otra persona publicó después. Si lo recuperás, puede reemplazar cambios más nuevos.` : `Tenés cambios sin publicar del ${fmtDate(pending.at)}, guardados en este navegador.`),
     h("span", { class: "recover__act" },
-      h("button", { type: "button", class: "btn btn--ghost", onclick: () => { store.del(DRAFT_KEY); histReset(); recover.remove(); } }, "Descartarlos"),
-      h("button", { type: "button", class: "btn", onclick: () => { draft = withDefaults(pending.data); setDirty(); recover.remove(); draw(); } }, pending.stale ? "Recuperar igual" : "Recuperarlos")));
+      h("button", { type: "button", class: "btn btn--ghost", onclick: () => { bannerOpen = false; store.del(DRAFT_KEY); histReset(); recover.remove(); } }, "Descartarlos"),
+      h("button", { type: "button", class: "btn", onclick: () => { bannerOpen = false; draft = withDefaults(pending.data); setDirty(); recover.remove(); draw(); } }, pending.stale ? "Recuperar igual" : "Recuperarlos")));
   // (el historial arranca en lo publicado; al recuperar, el borrador entra como un cambio más)
 
   undoBtn = h("button", { type: "button", class: "ico ico--top", title: "Deshacer (Ctrl+Z)", "aria-label": "Deshacer", disabled: true, onclick: () => histGo(-1) }, icon("undo", 18));
