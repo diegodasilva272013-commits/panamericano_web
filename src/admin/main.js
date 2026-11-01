@@ -13,7 +13,22 @@ const store = {
 const DRAFT_KEY = "pm-admin-draft";
 
 let user = null, draft = null, remoteData = null, lastPub = null, isDirty = false, current = store.get("pm-admin-section") || "resumen";
-let saveBtn, discardBtn, statusEl, topEl, sideEl, navEl, goto, stashTimer, paintTimer, baseJson = {};
+let saveBtn, discardBtn, statusEl, topEl, sideEl, navEl, goto, redraw, stashTimer, paintTimer, histTimer, baseJson = {};
+let undoBtn, redoBtn, errBar, showErrBar = false;
+
+/* historial de cambios del borrador: deshacer y rehacer de todo, no solo de lo que se quita */
+let hist = [], hi = -1;
+const snapNow = () => JSON.stringify(strip(draft));
+const paintUndo = () => { if (undoBtn) { undoBtn.disabled = hi <= 0; redoBtn.disabled = hi >= hist.length - 1; } };
+const histReset = () => { hist = [snapNow()]; hi = 0; paintUndo(); };
+const histPush = () => { const s = snapNow(); if (s !== hist[hi]) { hist = hist.slice(0, hi + 1); hist.push(s); if (hist.length > 100) hist.shift(); hi = hist.length - 1; paintUndo(); } };
+const histGo = (d) => {
+  clearTimeout(histTimer); histPush(); // lo último que escribiste entra al historial antes de volver
+  const j = hi + d; if (j < 0 || j >= hist.length) return;
+  hi = j; draft = withDefaults(JSON.parse(hist[hi])); isDirty = changedSections().size > 0;
+  clearTimeout(stashTimer); if (isDirty) stashDraft(); else store.del(DRAFT_KEY);
+  redraw(); paintStatus(); paintUndo();
+};
 
 const mark = '<svg viewBox="0 0 24 24" width="26" height="26"><rect width="24" height="24" rx="7" fill="#f4b400"/><path d="M2 18c7 1 14-3 20-11v5C16 19 9 22 2 21z" fill="#171200"/><path d="M2 21c7 1 14-3 20-11" stroke="#d8261f" stroke-width="2.2" fill="none"/></svg>';
 const brand = () => h("div", { class: "brand", html: mark + "<span>Panamericano</span>" });
@@ -90,7 +105,18 @@ const setDirty = () => {
   if (!isDirty) { isDirty = true; paintStatus(); }
   clearTimeout(stashTimer); stashTimer = setTimeout(stashDraft, 700); // borrador automático en este navegador
   clearTimeout(paintTimer); paintTimer = setTimeout(paintStatus, 250);
+  clearTimeout(histTimer); histTimer = setTimeout(histPush, 500);
 };
+// barra de errores: queda arriba mientras falte algo, con enlaces a cada dato
+function paintErrBar() {
+  if (!errBar) return;
+  const errs = showErrBar ? validate(draft) : [];
+  if (!errs.length) { showErrBar = false; errBar.hidden = true; errBar.replaceChildren(); return; }
+  errBar.hidden = false;
+  errBar.replaceChildren(h("strong", {}, `Faltan ${errs.length} ${errs.length === 1 ? "dato" : "datos"} para publicar:`),
+    h("span", { class: "errbar__list" }, errs.slice(0, 4).map((x) => h("button", { type: "button", class: "link", onclick: () => goto(x.sec, x) }, x.msg.replace(/\.$/, ""), icon("arrow", 14))),
+      errs.length > 4 ? h("small", {}, `y ${errs.length - 4} más`) : null));
+}
 function paintStatus() {
   if (!statusEl) return;
   const ch = isDirty ? [...changedSections()] : [];
@@ -100,6 +126,7 @@ function paintStatus() {
   saveBtn.title = isDirty ? "Guardar y publicar (Ctrl+S)" : "No hay cambios para publicar";
   discardBtn.hidden = !isDirty;
   navEl?.querySelectorAll("button[data-id]").forEach((b) => b.classList.toggle("has-changes", ch.includes(b.dataset.id)));
+  paintErrBar();
 }
 const saveLabel = () => saveBtn.replaceChildren(h("span", { class: "lbl-dirty" }, "Guardar y publicar"), h("span", { class: "lbl-clean" }, "Todo publicado"));
 
@@ -109,7 +136,7 @@ async function publish() {
     const list = h("ul", { class: "errs" }, errors.map((x) => h("li", {},
       h("span", {}, x.msg),
       h("button", { type: "button", class: "link", onclick: () => { document.querySelector(".modal .btn--ghost")?.click(); goto(x.sec, x); } }, "Ir ahí", icon("arrow", 14)))));
-    const first = errors[0];
+    const first = errors[0]; showErrBar = true; paintErrBar();
     if (await confirmBox(h("div", {}, h("strong", {}, `Antes de publicar, revisá ${errors.length === 1 ? "esto" : "estas " + errors.length + " cosas"}:`), list), "Ir al primer error", "Seguir editando")) goto(first.sec, first);
     return;
   }
@@ -131,14 +158,26 @@ const help = (sec) => confirmBox(h("div", { class: "help" },
     h("p", {}, "Sí. Si quitaste algo, tocá \"Deshacer\". Antes de publicar, \"Descartar cambios\" deja todo como estaba. Si ya publicaste, en \"Versiones anteriores\" cargás cualquier versión vieja."))),
   "Entendido", false);
 
-// buscador de pantallas y acciones (Ctrl+K)
+const shortcuts = () => confirmBox(h("div", { class: "help" },
+  h("h3", {}, "Atajos del teclado"),
+  h("dl", { class: "keys" },
+    ...[["Ctrl + S", "Guardar y publicar"], ["Ctrl + K", "Buscar una pantalla, un servicio o una ayuda"], ["Ctrl + Z", "Deshacer el último cambio (fuera de un campo de texto)"], ["Ctrl + Shift + Z", "Rehacer"],
+      ["Enter", "Confirmar una hora"], ["Esc", "Cerrar la ventanita o el aviso"], ["?", "Ver esta lista"]].flatMap(([k, d]) => [h("dt", {}, h("kbd", {}, k)), h("dd", {}, d)]))),
+  "Entendido", false);
+
+// buscador de pantallas, servicios y ayudas (Ctrl+K)
 function palette() {
   if (document.querySelector(".palette")) return;
   const acts = [
     ...SECTIONS.map((s) => ({ label: s.label, sub: s.desc, run: () => goto(s.id) })),
     { label: "Cambiar un horario", sub: "Ir a los horarios de salida", run: () => goto("horarios") },
+    ...draft.routes.map((r, i) => ({ label: `${r.from || "Origen"} → ${r.to || "Destino"}`, sub: `Horarios${r.service ? " · " + r.service : ""}`, run: () => goto("horarios", { item: i }) })),
+    ...draft.destinations.map((d, i) => ({ label: d.name || "Destino", sub: "Destinos", run: () => goto("destinos", { item: i }) })),
     { label: "Guardar y publicar", sub: "Ctrl+S", run: () => publish() },
+    { label: "Deshacer", sub: "Ctrl+Z", run: () => histGo(-1) },
     { label: "Ver la web", sub: "Se abre en otra pestaña", run: () => window.open("/", "_blank", "noopener") },
+    ...SECTIONS.map((s) => ({ label: `Cómo se hace: ${s.label}`, sub: "Ayuda", run: () => help(s) })),
+    { label: "Ver atajos del teclado", sub: "?", run: () => shortcuts() },
   ];
   let sel = 0, shown = acts;
   const input = h("input", { type: "text", placeholder: "Escribí a dónde querés ir…", "aria-label": "Buscar pantalla o acción", role: "combobox", "aria-expanded": "true" });
@@ -179,6 +218,7 @@ function shell(pending) {
     scrollTo(0, y);
   };
 
+  redraw = draw;
   // lleva al cliente al campo exacto con el problema, lo marca y lo resalta un momento
   const focusTarget = ({ item, field, msg }) => {
     let scope = main;
@@ -214,7 +254,7 @@ function shell(pending) {
   saveBtn = h("button", { class: "btn btn--primary", type: "button", onclick: publish }); saveLabel();
   discardBtn = h("button", { class: "btn btn--ghost", type: "button", hidden: true, onclick: async () => {
     if (!(await confirmBox("Se pierden todos los cambios que no publicaste y vuelve lo que está hoy en la web. ¿Descartarlos?", "Descartar"))) return;
-    draft = withDefaults(structuredClone(remoteData)); isDirty = false; clearTimeout(stashTimer); store.del(DRAFT_KEY); paintStatus(); draw(); toast("Cambios descartados.");
+    draft = withDefaults(structuredClone(remoteData)); isDirty = false; clearTimeout(stashTimer); store.del(DRAFT_KEY); showErrBar = false; histReset(); paintStatus(); draw(); toast("Cambios descartados.");
   } }, "Descartar cambios");
 
   // borrador de una sesión anterior que no se llegó a publicar
@@ -223,8 +263,12 @@ function shell(pending) {
     h("span", { class: "recover__act" },
       h("button", { type: "button", class: "btn btn--ghost", onclick: () => { store.del(DRAFT_KEY); recover.remove(); } }, "Descartarlos"),
       h("button", { type: "button", class: "btn", onclick: () => { draft = withDefaults(pending.data); setDirty(); recover.remove(); draw(); } }, "Recuperarlos")));
+  // (el historial arranca en lo publicado; al recuperar, el borrador entra como un cambio más)
 
-  topEl = h("header", { class: "top" }, h("div", { class: "busybar", "aria-hidden": "true" }), statusEl, h("a", { class: "link", href: "/", target: "_blank", rel: "noopener" }, "Ver la web", icon("external", 16)), discardBtn, saveBtn);
+  undoBtn = h("button", { type: "button", class: "ico ico--top", title: "Deshacer (Ctrl+Z)", "aria-label": "Deshacer", disabled: true, onclick: () => histGo(-1) }, icon("undo", 18));
+  redoBtn = h("button", { type: "button", class: "ico ico--top", title: "Rehacer (Ctrl+Shift+Z)", "aria-label": "Rehacer", disabled: true, onclick: () => histGo(1) }, icon("redo", 18));
+  errBar = h("div", { class: "errbar", role: "alert", hidden: true });
+  topEl = h("header", { class: "top" }, h("div", { class: "busybar", "aria-hidden": "true" }), statusEl, h("span", { class: "top__undo" }, undoBtn, redoBtn), h("a", { class: "link", href: "/", target: "_blank", rel: "noopener" }, "Ver la web", icon("external", 16)), discardBtn, saveBtn);
   sideEl = h("aside", { class: "side" }, h("div", { class: "livery", "aria-hidden": "true" }),
     h("div", { class: "side__bar" }, brand(),
       h("button", { type: "button", class: "side__toggle", "aria-label": "Abrir el menú", onclick: () => sideEl.classList.toggle("is-open") }, icon("menu", 22))),
@@ -238,8 +282,8 @@ function shell(pending) {
           if (isDirty && !(await confirmBox("Hay cambios sin publicar. Si salís se pierden. ¿Salir igual?", "Salir"))) return;
           isDirty = false; store.del(DRAFT_KEY); await signOut(); await boot();
         } }, icon("logout", 17), "Cerrar sesión"))));
-  app.replaceChildren(h("div", { class: "layout" }, sideEl, h("div", { class: "content" }, topEl, recover || null, main)));
-  draw(); paintStatus();
+  app.replaceChildren(h("div", { class: "layout" }, sideEl, h("div", { class: "content" }, topEl, errBar, recover || null, main)));
+  histReset(); draw(); paintStatus();
 }
 
 async function boot() {
@@ -263,9 +307,12 @@ async function boot() {
 }
 
 // atajos: Ctrl+S publica, Ctrl+K busca
+const typing = () => { const a = document.activeElement; return !!a && (/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || a.isContentEditable); };
 addEventListener("keydown", (e) => {
+  if (e.key === "?" && !typing() && saveBtn?.isConnected && !document.querySelector(".modal")) { e.preventDefault(); shortcuts(); return; }
   if (!(e.ctrlKey || e.metaKey)) return;
   const k = e.key.toLowerCase();
+  if (k === "z" && saveBtn?.isConnected && !typing() && !document.querySelector(".modal")) { e.preventDefault(); histGo(e.shiftKey ? 1 : -1); return; } // dentro de un campo, Ctrl+Z deshace el texto
   if (k === "s") {
     e.preventDefault();
     if (saveBtn?.isConnected && !saveBtn.disabled && !document.querySelector(".modal")) publish();

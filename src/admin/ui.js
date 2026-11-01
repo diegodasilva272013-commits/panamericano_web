@@ -21,7 +21,8 @@ const ICONS = {
   horarios: '<circle cx="6" cy="6" r="2.2"/><circle cx="18" cy="18" r="2.2"/><path d="M8.2 6H13a3 3 0 0 1 0 6h-2a3 3 0 0 0 0 6h4.8"/>',
   menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
   search: '<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/>',
-  undo: '<path d="M9 7 4 12l5 5M4 12h10a6 6 0 0 1 0 12"/>',
+  undo: '<path d="M9 14 4 9l5-5M4 9h9a6 6 0 0 1 0 12h-3"/>',
+  redo: '<path d="m15 14 5-5-5-5M20 9h-9a6 6 0 0 0 0 12h3"/>',
   destinos: '<path d="M12 21s6.5-5.6 6.5-11a6.5 6.5 0 1 0-13 0c0 5.4 6.5 11 6.5 11z"/><circle cx="12" cy="10" r="2.3"/>',
   galeria: '<rect x="3.5" y="4.5" width="17" height="15" rx="3"/><circle cx="9" cy="10" r="1.6"/><path d="M4 17l5-4.5 4 3.5 3-2.5 4 3"/>',
   abordo: '<rect x="4" y="4" width="16" height="13.5" rx="3"/><path d="M4 11h16M8 20.5v-3M16 20.5v-3"/>',
@@ -48,6 +49,7 @@ let toastBox;
 // action: { label, run } agrega un botón (por ejemplo "Deshacer")
 export function toast(msg, kind = "ok", ms = 4200, action) {
   if (!toastBox) { toastBox = h("div", { class: "toasts", role: "status", "aria-live": "polite" }); document.body.append(toastBox); }
+  toastBox.querySelectorAll(".toast").forEach((o) => o.remove()); // un solo aviso a la vez: el nuevo reemplaza al anterior
   const close = () => { t.classList.add("is-out"); setTimeout(() => t.remove(), 300); };
   const t = h("div", { class: `toast toast--${kind}` }, h("span", {}, msg),
     action && h("button", { type: "button", class: "toast__act", onclick: () => { action.run(); close(); } }, icon("undo", 15), action.label));
@@ -106,7 +108,7 @@ export function group(title, desc, ...kids) {
 export const kb = (n) => (n > 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.round(n / 1024) + " KB");
 
 // ---------- lista editable (subir, bajar, quitar, agregar) ----------
-export function listEditor({ items, render, onChange, addLabel = "Agregar", make, min = 0, max = 99, title, empty = "Todavía no hay nada.", extra }) {
+export function listEditor({ items, render, onChange, addLabel = "Agregar", make, min = 0, max = 99, title, sub, empty = "Todavía no hay nada.", extra }) {
   const box = h("div", { class: "list" });
   const draw = () => {
     box.replaceChildren();
@@ -115,7 +117,7 @@ export function listEditor({ items, render, onChange, addLabel = "Agregar", make
       const move = (d) => { const j = i + d; if (j < 0 || j >= items.length) return; [items[i], items[j]] = [items[j], items[i]]; onChange(); draw(); };
       box.append(h("div", { class: "item" },
         h("div", { class: "item__bar" },
-          h("strong", {}, title ? title(it, i) : `#${i + 1}`),
+          h("span", { class: "item__title" }, h("strong", {}, title ? title(it, i) : `#${i + 1}`), sub && sub(it, i) ? h("small", { class: "item__sub" }, sub(it, i)) : null),
           h("span", { class: "item__btns" },
             h("button", { type: "button", class: "ico", title: "Duplicar", "aria-label": "Duplicar", disabled: items.length >= max,
               onclick: () => { const c = structuredClone(it); if (typeof c.id === "string") c.id = "r" + Math.random().toString(36).slice(2, 7); delete c._bad; items.splice(i + 1, 0, c); onChange(); draw(); } }, icon("copy", 17)),
@@ -141,7 +143,7 @@ export function listEditor({ items, render, onChange, addLabel = "Agregar", make
 export function imageField({ label, url, onChange, maxWidth = 1600, hint }) {
   const img = h("img", { alt: "", class: "imgf__img" });
   const info = h("small", { class: "hint" }, hint || "");
-  const set = (u) => { img.src = u || ""; img.hidden = !u; };
+  let set = (u) => { img.src = u || ""; img.hidden = !u; };
   set(url);
   const file = h("input", { type: "file", accept: "image/*", hidden: true });
   file.addEventListener("change", async () => {
@@ -155,5 +157,10 @@ export function imageField({ label, url, onChange, maxWidth = 1600, hint }) {
     finally { btn.disabled = false; btn.textContent = old; file.value = ""; }
   });
   const btn = h("button", { type: "button", class: "btn btn--ghost", onclick: () => file.click() }, url ? "Cambiar imagen" : "Elegir imagen");
-  return h("div", { class: "imgf" }, label && h("span", { class: "imgf__label" }, label), h("div", { class: "imgf__row" }, img, h("div", {}, btn, file, info)));
+  // la foto va con marco de boleto: borde fino y la franja del bus abajo
+  const ticket = h("div", { class: "ticket" }, img, h("div", { class: "ticket__stripe", "aria-hidden": "true" }));
+  ticket.hidden = !url;
+  const baseSet = set;
+  set = (u) => { baseSet(u); ticket.hidden = !u; };
+  return h("div", { class: "imgf" }, label && h("span", { class: "imgf__label" }, label), h("div", { class: "imgf__row" }, ticket, h("div", {}, btn, file, info)));
 }

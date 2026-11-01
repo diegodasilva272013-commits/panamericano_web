@@ -102,7 +102,7 @@ function timesBoard(r, onChange, others) {
   const count = h("small", { class: "tb__count" });
   const err = h("small", { class: "err", role: "alert" });
   const ta = h("textarea", { rows: 3, class: "mono", "aria-label": "Horarios escritos a mano" }, timesToText(r));
-  let open = -1;
+  let open = -1, refocus = null;
 
   const changed = () => { r._bad = undefined; r.times = [...new Set(r.times)].sort(); ta.value = timesToText(r); err.textContent = ""; onChange(); draw(); };
   const snap = () => ({ times: [...r.times], days: r.days ? { ...r.days } : undefined });
@@ -110,23 +110,23 @@ function timesBoard(r, onChange, others) {
   const undoable = (msg, fn) => { const s = snap(); fn(); toast(msg, "ok", 8000, { label: "Deshacer", run: () => restore(s) }); };
 
   const cell = (t, i) => {
-    const btn = h("button", { type: "button", class: "tb__chip" + (open === i ? " is-open" : ""), "aria-expanded": String(open === i), title: "Tocá para cambiar la hora o quitarla",
-      onclick: () => { open = open === i ? -1 : i; draw(); } }, t, r.days?.[t] && h("em", {}, r.days[t]));
+    const btn = h("button", { type: "button", class: "tb__chip" + (open === i ? " is-open" : ""), "aria-expanded": String(open === i), "aria-haspopup": "dialog", title: "Tocá para cambiar la hora o quitarla",
+      onclick: () => { if (open === i) refocus = t; open = open === i ? -1 : i; draw(); } }, t, r.days?.[t] && h("em", {}, r.days[t]));
     if (open !== i) return h("span", { class: "tb__cell" }, btn);
 
     const tIn = h("input", { type: "text", inputmode: "numeric", value: t, maxlength: 5, "aria-label": "Hora de salida" });
     const dIn = h("input", { type: "text", value: r.days?.[t] || "", placeholder: "Todos los días", "aria-label": "Días en que sale (ejemplo: mar · jue · vie)" });
     const pErr = h("small", { class: "err", role: "alert" });
     const done = () => {
-      const nt = readTime(tIn.value); if (!nt) { pErr.textContent = "Escribí una hora como 14:30."; tIn.focus(); return; }
+      const nt = readTime(tIn.value); if (!nt) { pErr.textContent = `No entiendo "${tIn.value}". Escribí una hora como 14:30.`; tIn.focus(); return; }
       const days = { ...(r.days || {}) }; delete days[t];
       const d = dIn.value.replace(/[()]/g, "").trim(); if (d) days[nt] = d;
-      r.times[i] = nt; setDays(r, days); open = -1; changed();
+      r.times[i] = nt; setDays(r, days); open = -1; refocus = nt; changed();
     };
     const drop = () => undoable(`Quitaste la salida de las ${t}.`, () => { const days = { ...(r.days || {}) }; delete days[t]; setDays(r, days); r.times.splice(i, 1); open = -1; changed(); });
-    const keys = (e) => { if (e.key === "Enter") { e.preventDefault(); done(); } else if (e.key === "Escape") { e.stopPropagation(); open = -1; draw(); } };
+    const keys = (e) => { if (e.key === "Enter") { e.preventDefault(); done(); } else if (e.key === "Escape") { e.stopPropagation(); open = -1; refocus = t; draw(); } };
     [tIn, dIn].forEach((x) => x.addEventListener("keydown", keys));
-    const pop = h("div", { class: "tb__pop", role: "group", "aria-label": "Editar salida" },
+    const pop = h("div", { class: "tb__pop", role: "dialog", "aria-label": "Editar salida" },
       h("label", {}, "Hora", tIn), h("label", {}, "Días (si no sale todos)", dIn), pErr,
       h("div", { class: "tb__popact" },
         h("button", { type: "button", class: "btn btn--primary", onclick: done }, "Listo"),
@@ -144,7 +144,9 @@ function timesBoard(r, onChange, others) {
     const parts = addIn.value.split(/[\s,;]+/).filter(Boolean); if (!parts.length) return;
     const ok = parts.map(readTime), bad = parts.filter((_, k) => !ok[k]);
     if (bad.length) { err.textContent = `No se entiende: ${bad.join(", ")}. Escribilas así: 06:15 o 14:30.`; addIn.focus(); return; }
+    const dup = ok.filter((t) => r.times.includes(t));
     r.times.push(...ok); addIn.value = ""; changed();
+    if (dup.length) toast(`Ya ${dup.length > 1 ? "estaban" : "estaba"}: ${[...new Set(dup)].join(", ")}.`, "ok", 5000);
   };
   addIn.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); add(); } });
 
@@ -168,11 +170,12 @@ function timesBoard(r, onChange, others) {
   const draw = () => {
     chips.replaceChildren(...(r.times.length ? r.times.map(cell) : [h("em", { class: "tb__empty" }, "Todavía no hay horarios. Escribí el primero abajo.")]));
     count.textContent = `${r.times.length} ${r.times.length === 1 ? "salida" : "salidas"} por día`;
+    if (refocus != null) { const c = [...chips.querySelectorAll(".tb__chip")]; (c.find((x) => x.textContent.startsWith(refocus)) || c[0])?.focus(); refocus = null; }
   };
   draw();
-  return h("div", { class: "tb" }, chips,
+  return h("div", { class: "tb" }, h("p", { class: "tb__hint" }, "Tocá una hora para cambiarla o quitarla."), chips,
     h("div", { class: "tb__add" }, addIn, h("button", { type: "button", class: "btn btn--primary", onclick: add }, icon("plus", 16), "Agregar"), count), err,
-    h("details", { class: "adv" }, h("summary", {}, "Más herramientas"),
+    h("details", { class: "adv" }, h("summary", {}, "Correr o copiar horarios"),
       h("div", { class: "tb__tools" },
         h("div", { class: "tb__tool" }, h("span", {}, "Correr todas las salidas"), mins, h("span", {}, "min"),
           h("button", { type: "button", class: "btn btn--ghost", onclick: () => shift(-1) }, "Adelantar"), h("button", { type: "button", class: "btn btn--ghost", onclick: () => shift(1) }, "Atrasar")),
@@ -190,35 +193,35 @@ function routesSection({ draft, dirty }) {
     items: routes, onChange: () => { dirty(); dl.replaceChildren(...origins().map((o) => h("option", { value: o }))); },
     addLabel: "Agregar servicio", empty: "No hay servicios cargados.",
     make: () => ({ id: "r" + Math.random().toString(36).slice(2, 7), from: origins()[0] || "", to: "", via: "", service: "", stops: [], times: [], note: "" }),
-    title: (r) => `${r.from || "Origen"} → ${r.to || "Destino"}${r.service ? " · " + r.service : ""}`,
+    title: (r) => `${r.from || "Origen"} → ${r.to || "Destino"}`, sub: (r) => r.service,
     render: (r) => h("div", { class: "svc" },
       // lo que más se hace (las horas) va primero; los datos del servicio quedan plegados
-      h("div", { class: "field" }, h("label", {}, "Horarios de salida"), timesBoard(r, dirty, () => routes.filter((x) => x !== r))),
+      h("div", { class: "field" }, h("label", { class: "sr-only" }, "Horarios de salida"), timesBoard(r, dirty, () => routes.filter((x) => x !== r))),
       h("details", { class: "adv svc__more", open: !(r.from && r.to) }, h("summary", {}, "Datos del servicio: origen, destino y paradas"),
         h("div", { class: "svc__fields" },
           h("div", { class: "grid2" },
             field({ label: "Sale desde (origen)", value: r.from, hint: "Elegí uno existente o escribí uno nuevo.", list: "origins-dl", validate: (v) => (v.trim() ? "" : "Falta el origen."), onInput: (v) => { r.from = v; dirty(); } }),
             field({ label: "Nombre del servicio", value: r.service, hint: "Por ejemplo: Ruta 9", onInput: (v) => { r.service = v; dirty(); } }),
             field({ label: "Destino final (se ve en el tablero)", value: r.to, hint: "Podés terminar con * si no todas las salidas llegan hasta ahí.", validate: (v) => (v.trim() ? "" : "Falta el destino final."), onInput: (v) => { r.to = v; dirty(); } }),
-            field({ label: "Pasa por (texto del tablero)", value: r.via, hint: "Opcional. Por ejemplo: Tilcara · Humahuaca.", onInput: (v) => { r.via = v; dirty(); } })),
+            field({ label: "Pueblos del camino (texto del tablero)", value: r.via, hint: "Opcional. Por ejemplo: Tilcara · Humahuaca.", onInput: (v) => { r.via = v; dirty(); } })),
           field({ label: "Paradas, en orden de viaje", value: stopsToText(r), long: true, rows: 2, hint: "Separadas por coma. Son los lugares a los que se puede viajar con este servicio.", validate: (v) => (parseStops(v).length ? "" : "Agregá al menos una parada."), onInput: (v) => { r.stops = parseStops(v); dirty(); } }),
           field({ label: "Nota (se muestra debajo)", long: true, rows: 2, value: r.note, onInput: (v) => { r.note = v; dirty(); } })))),
   });
   return h("div", { class: "stack" }, dl,
-    group("Servicios y horarios", "Cómo se cambia un horario: 1) buscá el servicio. 2) Tocá una hora para cambiarla o quitarla, o escribí una nueva abajo. 3) Guardá y publicá.", list));
+    group("Tus servicios", `${routes.length} servicios, ${routes.reduce((n, r) => n + (r.times?.length || 0), 0)} salidas por día. Buscá el servicio y tocá una hora para cambiarla.`, list));
 }
 
 /* ---------- destinos ---------- */
 function destinationsSection({ draft, dirty }) {
   return h("div", { class: "stack" }, group("Tarjetas de destinos", "Las tarjetas que se deslizan en la sección \"Del valle al altiplano\". El nombre tiene que coincidir con una localidad de los horarios para que el botón \"Ver horarios\" funcione.",
-    listEditor({ items: draft.destinations, onChange: dirty, addLabel: "Agregar destino", min: 1, max: 14, title: (d) => d.name || "Destino",
+    listEditor({ items: draft.destinations, onChange: dirty, addLabel: "Agregar destino", min: 1, max: 14, title: (d) => d.name || "Destino", sub: (d) => d.tag,
       make: () => ({ name: "", tag: "", text: "", image: "" }),
       render: (d) => h("div", { class: "split" },
         imageField({ label: "Foto", url: d.image, maxWidth: 1100, hint: "Se optimiza sola. Mejor si es vertical o cuadrada.", onChange: (u) => { d.image = u; dirty(); } }),
         h("div", {},
           h("div", { class: "grid2" },
             field({ label: "Nombre", value: d.name, validate: (v) => (v.trim() ? "" : "Falta el nombre."), onInput: (v) => { d.name = v; dirty(); } }),
-            field({ label: "Etiqueta (ej. Quebrada)", value: d.tag, onInput: (v) => { d.tag = v; dirty(); } })),
+            field({ label: "Zona (ej. Quebrada)", value: d.tag, onInput: (v) => { d.tag = v; dirty(); } })),
           field({ label: "Descripción corta", long: true, rows: 2, value: d.text, onInput: (v) => { d.text = v; dirty(); } }))) })));
 }
 
@@ -235,7 +238,7 @@ function gallerySection({ draft, dirty }) {
   upd();
   return h("div", { class: "stack" },
     group("Galería animada de la web", "Son las fotos que entran y se agrandan en el bloque \"Conectamos caminos\". Tienen que ser un múltiplo de 3 (6, 9, 12 o 15).", status,
-      listEditor({ items: draft.gallery, onChange: () => { upd(); dirty(); }, addLabel: "Agregar foto", max: 15, min: 6, title: (g, i) => g.caption || `Foto ${i + 1}`,
+      listEditor({ items: draft.gallery, onChange: () => { upd(); dirty(); }, addLabel: "Agregar foto", max: 15, min: 6, title: (g, i) => g.caption || `Foto ${i + 1}`, sub: (g, i) => `N.º ${i + 1}`,
         make: () => ({ src: "", caption: "" }),
         render: (g) => h("div", { class: "split" },
           imageField({ label: "Foto", url: g.src, maxWidth: 1000, hint: "Mejor cuadrada. Se recorta al centro.", onChange: (u) => { g.src = u; delete g.zoom; dirty(); } }),
@@ -265,7 +268,7 @@ function contactSection({ draft, dirty }) {
       field({ label: "Dirección (abajo de la página)", long: true, rows: 2, value: site.address, onInput: (v) => { site.address = v; dirty(); } }),
       field({ label: "Texto chico de abajo de la página", long: true, rows: 2, value: site.footerNote, onInput: (v) => { site.footerNote = v; dirty(); } })),
     group("Boleterías", "El listado de teléfonos de la sección Contacto.",
-      listEditor({ items: draft.boleterias, onChange: dirty, addLabel: "Agregar boletería", max: 20, title: (b) => b.name || "Boletería", make: () => ({ name: "", tel: "" }),
+      listEditor({ items: draft.boleterias, onChange: dirty, addLabel: "Agregar boletería", max: 20, title: (b) => b.name || "Boletería", sub: (b) => b.tel, make: () => ({ name: "", tel: "" }),
         render: (b) => h("div", { class: "grid3" },
           field({ label: "Localidad", value: b.name, onInput: (v) => { b.name = v; dirty(); } }),
           field({ label: "Teléfono", value: b.tel, onInput: (v) => { b.tel = v; dirty(); } }),
