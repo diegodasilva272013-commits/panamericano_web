@@ -11,11 +11,57 @@ npm run build    # produce dist/
 
 ## Estructura
 - `index.html` y `src/styles/` · maquetación y estilos
-- `src/scripts/hero-scroll.js` + `hero.config.js` · hero con secuencia de cuadros según el scroll (contenido y rutas en la config)
+- `src/content/defaults.js` · TODO el contenido por defecto (textos, horarios, destinos, fotos, hero). Es lo que se ve si el panel no guardó nada
+- `src/scripts/data.js`, `content.js`, `config.js` · lectura del contenido editable (base de datos) con respaldo en `defaults.js`
+- `src/scripts/hero-scroll.js` · hero con secuencia de cuadros según el scroll
+- `admin.html` + `src/admin/` · **panel de administración** (`/admin`)
+- `supabase/schema.sql` · tablas, permisos y almacenamiento del panel
+- `tools/mock-supabase.mjs` · servidor de prueba que imita Supabase (para probar el panel sin cuenta)
 - `src/scripts/journey.js` · "El viaje": perfil de altura de la Ruta 9
 - `src/scripts/schedule.js`, `booking.js`, `data.js` · tablero de salidas, reserva y datos (horarios, destinos, boleterías)
 - `src/scripts/voice.js`, `whatsapp.js` · llamada con el asistente de voz y chat de WhatsApp
 - `public/panamericano/frames/` · 476 cuadros del hero (desktop 1600 px, mobile 720 px cuadrado) + `manifest.json`
+
+## Panel de administración (`/admin`)
+Permite editar sin tocar el código: **textos** de toda la web, **horarios y servicios**, **destinos**, **fotos** (subir, cambiar y agregar), **boleterías y contacto**, **preguntas frecuentes** y el **hero** (textos y video nuevo). Cada cambio se publica al instante, hay historial para volver atrás y las imágenes se optimizan solas al subirlas.
+
+### Instalación (una sola vez, ~10 minutos)
+1. **Crear el proyecto**: en [supabase.com](https://supabase.com) crear una cuenta y un proyecto nuevo (región São Paulo).
+2. **Crear tablas y permisos**: *SQL Editor → New query* → pegar todo `supabase/schema.sql` → *Run*.
+3. **Crear tu usuario**: *Authentication → Users → Add user* (email y contraseña). Después, en *Authentication → Sign In / Providers → Email*, **desactivar el alta de usuarios nuevos** ("Allow new users to sign up").
+4. **Darte permiso de administrador**: en el *SQL Editor* ejecutar la última sentencia de `schema.sql` (está comentada) con tu email. Para sumar a otra persona: crear su usuario y repetir con su email.
+5. **Conectar la web**: *Settings → API* → copiar **Project URL** y la clave **anon public**. En Vercel: *Settings → Environment Variables* → agregar `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY` → *Redeploy*.
+6. Entrar a `https://TU-SITIO/admin` con el usuario del paso 3.
+
+> La clave *anon* es pública por diseño. La seguridad la dan las reglas de `schema.sql`: cualquiera puede **leer** el contenido, pero solo los usuarios de la tabla `admins` pueden **modificarlo** o subir archivos.
+
+### Cómo se usa
+- **Guardar y publicar** (arriba a la derecha) publica todo lo editado. Si algo está mal escrito (un horario, un teléfono, la cantidad de fotos), avisa antes de publicar.
+- **Historial** guarda las últimas 30 versiones: se puede cargar una anterior en el editor y publicarla.
+- **Fotos de la grilla**: tienen que ser múltiplo de 3 (6, 9, 12 o 15) para que la animación quede completa.
+- **Horarios**: cada servicio tiene su origen, sus paradas y sus horarios, separados por coma. Si una salida solo va ciertos días: `14:15 (mar · jue · vie)`.
+- **Video nuevo para el hero** (*Inicio y hero → Cambiar el video del hero*): subir los videos de cada tramo (MP4 horizontal, 5–12 s), ponerles título y tocar *Generar el hero*. El propio navegador los une con fundido y crea los cuadros (escritorio y celular). Hacerlo desde una compu con **Chrome o Edge** y buena conexión: tarda unos minutos y sube unos 75 MB. Recién cuando se toca *Usar este hero* y *Guardar y publicar* cambia la web. *Borrar versiones anteriores* libera espacio.
+
+### Límites del plan gratuito de Supabase (importante)
+- **Almacenamiento: 1 GB.** Cada hero nuevo ocupa ~75 MB; borrar las versiones viejas desde el panel.
+- **Tráfico: 5 GB por mes.** Las fotos pesan poco, pero **los cuadros de un hero propio los sirve Supabase**: un visitante que recorre todo el hero baja hasta ~52 MB (escritorio) o ~22 MB (celular). El hero original incluido en el sitio se sirve desde Vercel y no tiene este límite.
+
+### Tráfico de los cuadros del hero (recomendado si usan un hero propio)
+Para que los cuadros pasen por la red de Vercel (que los guarda en caché) y no gasten el tráfico de Supabase:
+1. En `vercel.json` agregar, dentro de la lista, una regla `rewrites` con **el dominio de tu proyecto** (el de *Project URL*):
+   ```json
+   "rewrites": [{ "source": "/hf/:path*", "destination": "https://TU-PROYECTO.supabase.co/storage/v1/object/public/hero-frames/:path*" }]
+   ```
+2. En Vercel agregar la variable `VITE_FRAMES_PROXY=/hf` y volver a desplegar.
+3. Subir de nuevo el video desde el panel. Para comprobar que funciona, abrir un cuadro (`/hf/<versión>/desktop/f_0001.webp`) y mirar que el encabezado `x-vercel-cache` diga `HIT` a partir de la segunda vez.
+Si el sitio llega a tener mucho tráfico, el plan Pro de Supabase sube el límite a 250 GB.
+
+### Probar el panel sin cuenta de Supabase
+```bash
+node tools/mock-supabase.mjs        # servidor de prueba en :54321 (admin@test.com / secret123)
+VITE_SUPABASE_URL=http://localhost:54321 VITE_SUPABASE_ANON_KEY=test npm run dev
+```
+y abrir `http://localhost:5173/admin`.
 
 ## Regenerar los frames del hero
 Los videos fuente (5 clips 1920×1080, 24 fps) no están en el repo por peso. Dejarlos en `assets-src/panamericano/` con los nombres de `sequence.json` y correr:

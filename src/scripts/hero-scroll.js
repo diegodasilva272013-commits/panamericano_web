@@ -23,9 +23,15 @@ export async function initHeroScroll(cfg, { reduce }) {
   const chaptersEl = [...root.querySelectorAll(".hs__chapter")];
   const mq = matchMedia("(max-width:700px)");
 
+  // Los cuadros pueden venir del panel de administracion (video nuevo: cfg.frames con su propio manifest y URL base)
+  // o ser la secuencia original incluida en el sitio (se lee su manifest.json).
   let manifest;
-  try { manifest = await (await fetch(`${cfg.base}/manifest.json`)).json(); }
-  catch { return; } // sin manifest queda el poster
+  const framesBase = cfg.frames?.base || cfg.base;
+  if (cfg.frames && cfg.frames.count) manifest = { patron: "f_%04d.webp", ...cfg.frames };
+  else {
+    try { manifest = await (await fetch(`${cfg.base}/manifest.json`)).json(); }
+    catch { return; } // sin manifest queda el poster
+  }
   const total = manifest.count;
 
   /* ---------- rangos de cada etapa (a partir de los cortes reales del video) ---------- */
@@ -48,7 +54,7 @@ export async function initHeroScroll(cfg, { reduce }) {
   const prog = { p: 0 };
 
   const ver = manifest.v ? `?v=${manifest.v}` : "";
-  const frameUrl = (j, i) => `${cfg.base}/${j}/${manifest.patron.replace(/%0(\d)d/, (_, w) => String(i + 1).padStart(+w, "0"))}${ver}`;
+  const frameUrl = (j, i) => `${framesBase}/${j}/${manifest.patron.replace(/%0(\d)d/, (_, w) => String(i + 1).padStart(+w, "0"))}${ver}`;
 
   function load(j, staticOnly) {
     cancelLoad();

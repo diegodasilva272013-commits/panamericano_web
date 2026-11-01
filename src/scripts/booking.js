@@ -1,4 +1,4 @@
-import { ORIGINS, destinationsFor, search, short, WA_NUMBER } from "./data.js";
+import { ORIGINS, destinationsFor, search, short, WA_NUMBER, esc } from "./data.js";
 import { fillSelect } from "./schedule.js";
 
 const $ = (s) => document.querySelector(s);
@@ -18,7 +18,7 @@ function buildSeats() {
 
 function summary() {
   const parts = [];
-  if (B.origin && B.dest) parts.push(`<b>${short(B.origin)} → ${short(B.dest)}</b>`);
+  if (B.origin && B.dest) parts.push(`<b>${esc(short(B.origin))} → ${esc(short(B.dest))}</b>`);
   if (B.date) parts.push(fmtDate(B.date));
   if (B.time) parts.push(`${B.time} h`);
   if (B.seats.length) parts.push(`asiento${B.seats.length > 1 ? "s" : ""} ${B.seats.sort((a, b) => a - b).join(", ")}`);
@@ -48,7 +48,7 @@ function renderTimes() {
   const list = search(B.origin, B.dest);
   $("#b-route-label").textContent = `${short(B.origin)} → ${short(B.dest)} · ${B.date ? fmtDate(B.date) : ""}. Elegí tu horario de salida.`;
   $("#b-times").innerHTML = list.length
-    ? list.map((x) => `<button type="button" aria-pressed="${x.time === B.time}" data-t="${x.time}">${x.time}<small>${x.days || (x.service === "Ruta 9" ? "" : x.service)}</small></button>`).join("")
+    ? list.map((x) => `<button type="button" aria-pressed="${x.time === B.time}" data-t="${x.time}">${x.time}<small>${esc(x.days || (x.service === "Ruta 9" ? "" : x.service))}</small></button>`).join("")
     : `<p class="empty">No hay servicios cargados para este tramo.</p>`;
 }
 

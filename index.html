@@ -42,13 +42,13 @@
       <span class="nav__mark" aria-hidden="true"><svg viewBox="0 0 24 24"><rect width="24" height="24" rx="7" fill="#f4b400"/><path d="M2 18c7 1 14-3 20-11v5C16 19 9 22 2 21z" fill="#171200"/><path d="M2 21c7 1 14-3 20-11" stroke="#d8261f" stroke-width="2.2" fill="none"/></svg></span><span>Panamericano</span>
     </a>
     <nav class="nav__links" aria-label="Principal">
-      <a href="#horarios">Horarios</a>
-      <a href="#destinos">Destinos</a>
-      <a href="#reservar">Reservar</a>
-      <a href="#antes">Antes de viajar</a>
-      <a href="#contacto">Contacto</a>
+      <a href="#horarios" data-t="nav.horarios">Horarios</a>
+      <a href="#destinos" data-t="nav.destinos">Destinos</a>
+      <a href="#reservar" data-t="nav.reservar">Reservar</a>
+      <a href="#antes" data-t="nav.antes">Antes de viajar</a>
+      <a href="#contacto" data-t="nav.contacto">Contacto</a>
     </nav>
-    <a class="nav__book" href="#reservar">Reservar</a>
+    <a class="nav__book" href="#reservar" data-t="nav.reservar">Reservar</a>
     <button class="nav__call" type="button" data-open-call>
       <span class="nav__call-dot" aria-hidden="true"></span>Llamar
     </button>
@@ -90,9 +90,9 @@
     <section class="block block--main" id="empresa">
       <div class="block__wrapper">
         <div class="content">
-          <h2 class="content__title">Conectamos<br /><em>caminos.</em></h2>
-          <p class="content__description">Trabajadores, vecinos y viajeros entre los cerros de colores y el altiplano.</p>
-          <a class="content__button" href="#horarios">Ver horarios ↓</a>
+          <h2 class="content__title"><span data-t="grid.a">Conectamos</span><br /><em data-t="grid.b">caminos.</em></h2>
+          <p class="content__description" data-t="grid.text">Trabajadores, vecinos y viajeros entre los cerros de colores y el altiplano.</p>
+          <a class="content__button" href="#horarios" data-t="grid.button">Ver horarios ↓</a>
         </div>
         <div class="gallery" aria-label="Destinos Panamericano">
           <ul class="gallery__grid" id="gallery"></ul>
@@ -108,20 +108,20 @@
     <!-- 04 · HORARIOS -->
     <section class="sec sec--schedule" id="horarios">
       <div class="sec__head">
-        <h2 class="display">Próximas salidas.<br /><em>En vivo, desde tu origen.</em></h2>
+        <h2 class="display"><span data-t="horarios.a">Próximas salidas.</span><br /><em data-t="horarios.b">En vivo, desde tu origen.</em></h2>
       </div>
 
       <div class="board" id="board">
         <div class="board__head">
           <div class="seg" role="group" aria-label="Origen" id="s-origins"></div>
-          <p class="board__clock"><span id="board-clock">--:--</span><small>hora de Jujuy</small></p>
+          <p class="board__clock"><span id="board-clock">--:--</span><small data-t="horarios.clock">hora de Jujuy</small></p>
         </div>
         <ol class="board__rows" id="board-rows" aria-live="polite"></ol>
         <p class="board__note" id="board-note"></p>
       </div>
 
       <div class="sched">
-        <h3 class="sched__title">Todas las salidas del día</h3>
+        <h3 class="sched__title" data-t="horarios.all">Todas las salidas del día</h3>
         <div class="chips" id="s-dests" role="group" aria-label="Destino"></div>
         <p class="sched__count label" id="s-count"></p>
         <div class="sched__grid" id="s-grid"></div>
@@ -132,7 +132,7 @@
     <!-- 05 · DESTINOS -->
     <section class="sec sec--dest" id="destinos">
       <div class="sec__head">
-        <h2 class="display">Del valle<br /><em>al altiplano.</em></h2>
+        <h2 class="display"><span data-t="destinos.a">Del valle</span><br /><em data-t="destinos.b">al altiplano.</em></h2>
       </div>
       <div class="rail" id="rail" tabindex="0" aria-label="Destinos, deslizá horizontalmente"></div>
     </section>
@@ -153,8 +153,8 @@
           <ol class="journey__labels" id="v-labels" aria-hidden="true"></ol>
           <div class="journey__bus" id="v-bus"><svg viewBox="0 0 160 62" aria-hidden="true"><path d="M7 12q0-8 8-8h124q15 0 15 15v28q0 4-4 4H12q-5 0-5-5z" fill="#14120f"/><path d="M128 8h16q8 0 8 9v15h-24z" fill="#8fa3b5"/><g fill="#c4231c"><rect x="15" y="10" width="13" height="11" rx="2"/><rect x="31" y="10" width="13" height="11" rx="2"/><rect x="47" y="10" width="13" height="11" rx="2"/><rect x="63" y="10" width="13" height="11" rx="2"/><rect x="79" y="10" width="13" height="11" rx="2"/><rect x="95" y="10" width="13" height="11" rx="2"/><rect x="111" y="10" width="13" height="11" rx="2"/></g><g fill="#51657a"><rect x="15" y="26" width="13" height="10" rx="2"/><rect x="31" y="26" width="13" height="10" rx="2"/><rect x="47" y="26" width="13" height="10" rx="2"/><rect x="63" y="26" width="13" height="10" rx="2"/></g><path d="M7 47c46 6 96-8 146-30v12C103 52 53 62 7 56z" fill="#f4b400"/><path d="M7 57c46 5 96-9 146-31" stroke="#d8261f" stroke-width="3.4" fill="none"/><path d="M7 52c46 5 96-9 146-31" stroke="#f3efe6" stroke-width="1.2" fill="none"/><rect x="150" y="30" width="5" height="6" rx="1.5" fill="#ffe9a6"/><g><circle cx="38" cy="54" r="8" fill="#0b0b0a" stroke="#3b3b37" stroke-width="2"/><circle cx="54" cy="54" r="8" fill="#0b0b0a" stroke="#3b3b37" stroke-width="2"/><circle cx="124" cy="54" r="8" fill="#0b0b0a" stroke="#3b3b37" stroke-width="2"/><circle cx="38" cy="54" r="2.6" fill="#8a867b"/><circle cx="54" cy="54" r="2.6" fill="#8a867b"/><circle cx="124" cy="54" r="2.6" fill="#8a867b"/></g></svg></div>
         </div>
-        <p class="journey__hint">Seguí el camino</p>
-        <a class="btn btn--accent journey__cta" href="#reservar">Reservar Jujuy → La Quiaca</a>
+        <p class="journey__hint" data-t="viaje.hint">Seguí el camino</p>
+        <a class="btn btn--accent journey__cta" href="#reservar" data-t="viaje.cta">Reservar Jujuy → La Quiaca</a>
       </div>
       <ol class="sr">
         <li>San Salvador de Jujuy, 1.260 metros</li><li>Volcán, 1.700</li><li>Tumbaya, 2.050</li><li>Purmamarca, 2.324</li><li>Maimará, 2.383</li><li>Tilcara, 2.461</li><li>Huacalera, 2.640</li><li>Humahuaca, 2.939</li><li>Tres Cruces, 3.700</li><li>Abra Pampa, 3.484</li><li>La Quiaca, 3.442 (alturas aproximadas)</li>
@@ -164,7 +164,7 @@
     <!-- 07 · RESERVA -->
     <section class="sec sec--book" id="reservar">
       <div class="sec__head">
-        <h2 class="display">Reservá tu lugar<br /><em>en cuatro pasos.</em></h2>
+        <h2 class="display"><span data-t="reservar.a">Reservá tu lugar</span><br /><em data-t="reservar.b">en cuatro pasos.</em></h2>
       </div>
 
       <div class="book" id="book">
@@ -215,7 +215,7 @@
             <button class="btn" type="button" id="b-next">Continuar</button>
           </div>
         </div>
-        <p class="book__legal">Demo de reserva: la solicitud se confirma con la boletería por WhatsApp. No se realiza ningún cobro y la tarifa se informa al confirmar.</p>
+        <p class="book__legal" data-t="reservar.legal">Demo de reserva: la solicitud se confirma con la boletería por WhatsApp. No se realiza ningún cobro y la tarifa se informa al confirmar.</p>
         </div>
         <aside class="book__aside" id="b-aside" aria-label="Tu pasaje"></aside>
       </div>
@@ -227,7 +227,7 @@
         <img src="/img/bus-negro.avif" alt="Ómnibus Panamericano negro y amarillo" loading="lazy" decoding="async" />
       </div>
       <div class="board__copy">
-        <h2 class="display">Viajá<br /><em>conectado.</em></h2>
+        <h2 class="display"><span data-t="abordo.a">Viajá</span><br /><em data-t="abordo.b">conectado.</em></h2>
         <dl class="specs" id="specs"></dl>
       </div>
     </section>
@@ -235,7 +235,7 @@
     <!-- 09 · ANTES DE VIAJAR -->
     <section class="sec sec--faq" id="antes">
       <div class="sec__head">
-        <h2 class="display">Lo que<br /><em>conviene saber.</em></h2>
+        <h2 class="display"><span data-t="antes.a">Lo que</span><br /><em data-t="antes.b">conviene saber.</em></h2>
       </div>
       <div class="faq" id="faq"></div>
     </section>
@@ -252,20 +252,20 @@
     <!-- 10 · CONTACTO -->
     <section class="contact" id="contacto">
       <div class="contact__lead">
-        <h2 class="display">Hablemos.<br /><em>Estamos en el camino.</em></h2>
+        <h2 class="display"><span data-t="contacto.a">Hablemos.</span><br /><em data-t="contacto.b">Estamos en el camino.</em></h2>
         <div class="contact__cta">
-          <button class="btn btn--accent" type="button" data-open-call>Llamar ahora</button>
-          <button class="btn btn--ghost" type="button" data-open-wa>Escribir por WhatsApp</button>
+          <button class="btn btn--accent" type="button" data-open-call data-t="contacto.call">Llamar ahora</button>
+          <button class="btn btn--ghost" type="button" data-open-wa data-t="contacto.wa">Escribir por WhatsApp</button>
         </div>
-        <p class="contact__central">Central <a href="tel:+543884254331">0388 425-4331</a></p>
+        <p class="contact__central"><span data-t="contacto.central">Central</span> <a href="tel:+543884254331" data-site-tel data-site="phoneLabel">0388 425-4331</a></p>
       </div>
       <ul class="boleterias" id="boleterias"></ul>
     </section>
 
     <footer class="foot">
       <div class="foot__brand"><span class="nav__mark" aria-hidden="true"><svg viewBox="0 0 24 24"><rect width="24" height="24" rx="7" fill="#f4b400"/><path d="M2 18c7 1 14-3 20-11v5C16 19 9 22 2 21z" fill="#171200"/><path d="M2 21c7 1 14-3 20-11" stroke="#d8261f" stroke-width="2.2" fill="none"/></svg></span>Panamericano</div>
-      <p>Terminal de Ómnibus Gral. Manuel Belgrano · Puesto del Marqués 605 · San Salvador de Jujuy (4600)</p>
-      <p class="foot__small">Transporte de pasajeros en Jujuy. Operamos todos los días, incluidos feriados. Sitio de demostración.</p>
+      <p data-site="address">Terminal de Ómnibus Gral. Manuel Belgrano · Puesto del Marqués 605 · San Salvador de Jujuy (4600)</p>
+      <p class="foot__small" data-site="footerNote">Transporte de pasajeros en Jujuy. Operamos todos los días, incluidos feriados. Sitio de demostración.</p>
     </footer>
   </main>
 

@@ -1,4 +1,4 @@
-import { ROUTES, ORIGINS, destinationsFor, search, short, TZ } from "./data.js";
+import { ROUTES, ORIGINS, destinationsFor, search, short, TZ, esc } from "./data.js";
 
 const $ = (s) => document.querySelector(s);
 const norm = (t) => t.normalize("NFD").replace(/[̀-ͯ]/g, "");
@@ -27,7 +27,7 @@ const daysOk = (days, wd) => {
 export const state = { origin: ORIGINS[0], dest: "Tilcara" };
 
 export function fillSelect(sel, items, value) {
-  sel.innerHTML = items.map((i) => `<option value="${i}">${short(i)}</option>`).join("");
+  sel.innerHTML = items.map((i) => `<option value="${esc(i)}">${esc(short(i))}</option>`).join("");
   if (items.includes(value)) sel.value = value;
 }
 
@@ -59,9 +59,9 @@ function renderBoard(animate) {
   $("#board-rows").innerHTML = list.map((x, i) => {
     const changed = animate || prevTimes[i] !== x.time;
     const digits = x.time.split("").map((c, k) => `<span class="d${changed ? " flip" : ""}" style="--k:${k + i * 2}">${c}</span>`).join("");
-    return `<li><button type="button" class="brow${i === 0 ? " is-first" : ""}" data-book="${x.time}" data-dest="${x.dest}" aria-label="Reservar salida de las ${x.time} hacia ${x.to}">
+    return `<li><button type="button" class="brow${i === 0 ? " is-first" : ""}" data-book="${x.time}" data-dest="${esc(x.dest)}" aria-label="Reservar salida de las ${x.time} hacia ${esc(x.to)}">
       <span class="brow__time">${digits}</span>
-      <span class="brow__to"><b>${x.to}</b><small>${[x.via, x.days].filter(Boolean).join(" · ")}</small></span>
+      <span class="brow__to"><b>${esc(x.to)}</b><small>${esc([x.via, x.days].filter(Boolean).join(" · "))}</small></span>
       <span class="brow__eta">${i === 0 && x.delta <= 1 ? "Saliendo" : "En " + fmtEta(x.delta)}${x.tomorrow ? " · mañana" : ""}</span>
       <span class="brow__go" aria-hidden="true">Reservar</span>
     </button></li>`;
@@ -76,8 +76,8 @@ function renderBoard(animate) {
 /* ---------- Todas las salidas hacia un destino ---------- */
 function renderPicker() {
   const { origin, dest } = state;
-  $("#s-origins").innerHTML = ORIGINS.map((o) => `<button type="button" aria-pressed="${o === origin}" data-o="${o}">${short(o)}</button>`).join("");
-  $("#s-dests").innerHTML = destinationsFor(origin).map((d) => `<button type="button" aria-pressed="${d === dest}" data-d="${d}">${d}</button>`).join("");
+  $("#s-origins").innerHTML = ORIGINS.map((o) => `<button type="button" aria-pressed="${o === origin}" data-o="${esc(o)}">${esc(short(o))}</button>`).join("");
+  $("#s-dests").innerHTML = destinationsFor(origin).map((d) => `<button type="button" aria-pressed="${d === dest}" data-d="${esc(d)}">${esc(d)}</button>`).join("");
 
   const list = search(origin, dest);
   const now = nowInJujuy();
@@ -85,7 +85,7 @@ function renderPicker() {
   $("#s-grid").innerHTML = list.map((x) => {
     const past = toMin(x.time) < now && next && toMin(next.time) >= now;
     return `<button type="button" class="slot${past ? " is-past" : ""}${x === next ? " is-next" : ""}" data-book="${x.time}" aria-label="Reservar salida de las ${x.time}">
-      <b>${x.time}</b><small>${slotLabel(x)}</small></button>`;
+      <b>${x.time}</b><small>${esc(slotLabel(x))}</small></button>`;
   }).join("") || `<p class="empty">No hay servicios cargados para este tramo.</p>`;
   $("#s-count").textContent = list.length ? `${short(origin)} → ${dest} · ${list.length} salidas por día` : "";
   const notes = [...new Set(list.map((x) => x.note))];

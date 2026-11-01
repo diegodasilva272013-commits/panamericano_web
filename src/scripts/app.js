@@ -1,7 +1,7 @@
 import Lenis from "lenis";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
-import { ORIGINS, destinationsFor, short, DESTINATIONS, BOLETERIAS, FAQ, SERVICES } from "./data.js";
+import { ORIGINS, destinationsFor, short, DESTINATIONS, BOLETERIAS, FAQ, SERVICES, GALLERY, BOARD_IMAGE, esc } from "./data.js";
 import { initSchedule, setRoute, fillSelect } from "./schedule.js";
 import { initBooking, prefill } from "./booking.js";
 import { initVoice } from "./voice.js";
@@ -106,31 +106,29 @@ function initSmoothScrolling() {
 const goTo = (sel) => lenis ? lenis.scrollTo(sel, { offset: -40, duration: 1.4 }) : document.querySelector(sel)?.scrollIntoView({ behavior: "smooth" });
 
 /* ---------- Contenido dinámico ---------- */
-const GALLERY = [
-  ["tilcara", "Tilcara"], ["humahuaca", "Humahuaca"], ["laquiaca", "La Quiaca"],
-  ["bus-negro", "Nuestra flota"], ["terminal-jujuy", "Jujuy"], ["abrapampa", "Abra Pampa"],
-  ["perico", "Perico"], ["bus-ruta", "Ruta 9"], ["tilcara-b", "Quebrada"],
-];
 
 function renderStatic() {
-  $("#gallery").innerHTML = GALLERY.map(([img, cap]) =>
-    `<li class="gallery__item"><img class="gallery__image" fetchpriority="low" decoding="async" data-src="/img/${img.replace(/-b$/, "")}.avif" alt="${cap}" style="${img.endsWith("-b") ? "object-position:100% 50%;transform:scale(1.5)" : ""}" /><span class="gallery__cap">${cap}</span></li>`).join("");
+  $("#gallery").innerHTML = GALLERY.map((g) =>
+    `<li class="gallery__item"><img class="gallery__image" fetchpriority="low" decoding="async" data-src="${esc(g.src)}" alt="${esc(g.caption)}" style="${g.zoom ? "object-position:100% 50%;transform:scale(1.5)" : ""}" /><span class="gallery__cap">${esc(g.caption)}</span></li>`).join("");
 
   $("#rail").innerHTML = DESTINATIONS.map((d) => `
     <article class="card">
-      <img src="/img/${d.img}.avif" alt="${d.name}" draggable="false" loading="lazy" decoding="async" />
+      <img src="${esc(d.image || `/img/${d.img}.avif`)}" alt="${esc(d.name)}" draggable="false" loading="lazy" decoding="async" />
       <div class="card__body">
-        <span class="card__tag">${d.tag}</span>
-        <h3>${short(d.name)}</h3>
-        <p>${d.text}</p>
-        <button type="button" data-goto="${d.name}">Ver horarios</button>
+        <span class="card__tag">${esc(d.tag)}</span>
+        <h3>${esc(short(d.name))}</h3>
+        <p>${esc(d.text)}</p>
+        <button type="button" data-goto="${esc(d.name)}">Ver horarios</button>
       </div>
     </article>`).join("");
 
-  $("#specs").innerHTML = SERVICES.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join("");
-  $("#faq").innerHTML = FAQ.map(([q, a]) => `<details><summary>${q}</summary><div class="ans"><p>${a}</p></div></details>`).join("");
+  const board = document.querySelector(".board__media img");
+  if (board && BOARD_IMAGE?.src) { if (board.getAttribute("src") !== BOARD_IMAGE.src) board.src = BOARD_IMAGE.src; board.alt = BOARD_IMAGE.alt || ""; }
+
+  $("#specs").innerHTML = SERVICES.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("");
+  $("#faq").innerHTML = FAQ.map(([q, ans]) => `<details><summary>${esc(q)}</summary><div class="ans"><p>${esc(ans)}</p></div></details>`).join("");
   $("#boleterias").innerHTML = BOLETERIAS.map((b) =>
-    `<li><div><b>${b.name}</b>${b.sub ? `<small>${b.sub}</small>` : ""}</div><a href="tel:+54${b.tel.replace(/\D/g, "")}">${b.tel}</a></li>`).join("");
+    `<li><div><b>${esc(b.name)}</b>${b.sub ? `<small>${esc(b.sub)}</small>` : ""}</div><a href="tel:+54${b.tel.replace(/\D/g, "")}">${esc(b.tel)}</a></li>`).join("");
 }
 
 /* ---------- Buscador de portada ---------- */
