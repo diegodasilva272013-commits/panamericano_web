@@ -16,9 +16,12 @@ export function h(tag, attrs, ...kids) {
 
 // ---------- iconos (un solo trazo, mismo grosor) ----------
 const ICONS = {
-  hero: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10.5 9.5v5l4-2.5z"/>',
+  hero: '<rect x="5" y="3.5" width="14" height="14" rx="3.5"/><path d="M5 11h14M9 7h6"/><path d="M8.5 14.5h.01M15.5 14.5h.01M7.5 17.5v2.5M16.5 17.5v2.5"/>',
   textos: '<path d="M5 7V5.5h14V7M12 5.5v13M9 18.5h6"/>',
-  horarios: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  horarios: '<circle cx="6" cy="6" r="2.2"/><circle cx="18" cy="18" r="2.2"/><path d="M8.2 6H13a3 3 0 0 1 0 6h-2a3 3 0 0 0 0 6h4.8"/>',
+  menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
+  search: '<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/>',
+  undo: '<path d="M9 7 4 12l5 5M4 12h10a6 6 0 0 1 0 12"/>',
   destinos: '<path d="M12 21s6.5-5.6 6.5-11a6.5 6.5 0 1 0-13 0c0 5.4 6.5 11 6.5 11z"/><circle cx="12" cy="10" r="2.3"/>',
   galeria: '<rect x="3.5" y="4.5" width="17" height="15" rx="3"/><circle cx="9" cy="10" r="1.6"/><path d="M4 17l5-4.5 4 3.5 3-2.5 4 3"/>',
   abordo: '<rect x="4" y="4" width="16" height="13.5" rx="3"/><path d="M4 11h16M8 20.5v-3M16 20.5v-3"/>',
@@ -42,11 +45,14 @@ export const icon = (name, size = 20) =>
 
 // ---------- avisos ----------
 let toastBox;
-export function toast(msg, kind = "ok", ms = 4200) {
+// action: { label, run } agrega un botón (por ejemplo "Deshacer")
+export function toast(msg, kind = "ok", ms = 4200, action) {
   if (!toastBox) { toastBox = h("div", { class: "toasts", role: "status", "aria-live": "polite" }); document.body.append(toastBox); }
-  const t = h("div", { class: `toast toast--${kind}` }, msg);
+  const close = () => { t.classList.add("is-out"); setTimeout(() => t.remove(), 300); };
+  const t = h("div", { class: `toast toast--${kind}` }, h("span", {}, msg),
+    action && h("button", { type: "button", class: "toast__act", onclick: () => { action.run(); close(); } }, icon("undo", 15), action.label));
   toastBox.append(t);
-  setTimeout(() => { t.classList.add("is-out"); setTimeout(() => t.remove(), 300); }, ms);
+  setTimeout(close, action ? Math.max(ms, 8000) : ms);
 }
 export function confirmBox(msg, okLabel = "Aceptar", cancelLabel = "Cancelar") {
   return new Promise((res) => {
@@ -74,17 +80,18 @@ export function confirmBox(msg, okLabel = "Aceptar", cancelLabel = "Cancelar") {
 
 // ---------- campos ----------
 let uid = 0;
-export function field({ label, hint, value, onInput, long, type = "text", placeholder, rows = 3, mono, error, list }) {
+// validate(valor) -> texto del problema o "": se muestra al salir del campo, no recién al publicar
+export function field({ label, hint, value, onInput, long, type = "text", placeholder, rows = 3, mono, error, list, validate }) {
   const id = `f${++uid}`;
   const input = long
     ? h("textarea", { id, rows, placeholder, class: mono ? "mono" : "" }, value ?? "")
     : h("input", { id, type, placeholder, list, value: value ?? "", class: mono ? "mono" : "" });
-  input.addEventListener("input", () => onInput(input.value, input));
-  return h("div", { class: "field" + (error ? " is-bad" : "") },
-    h("label", { for: id }, label),
-    input,
-    hint && h("small", { class: "hint" }, hint),
-    error && h("small", { class: "err" }, error));
+  const err = h("small", { class: "err", role: "alert" }, error || "");
+  const box = h("div", { class: "field" + (error ? " is-bad" : "") }, h("label", { for: id }, label), input, hint && h("small", { class: "hint" }, hint), err);
+  const verify = () => { const m = validate ? validate(input.value) : ""; err.textContent = m || ""; box.classList.toggle("is-bad", !!m); input.setAttribute("aria-invalid", m ? "true" : "false"); };
+  input.addEventListener("input", () => { onInput(input.value, input); if (box.classList.contains("is-bad")) verify(); });
+  if (validate) input.addEventListener("blur", verify);
+  return box;
 }
 export function check({ label, value, onChange }) {
   const input = h("input", { type: "checkbox" }); input.checked = !!value;
@@ -115,7 +122,11 @@ export function listEditor({ items, render, onChange, addLabel = "Agregar", make
             h("button", { type: "button", class: "ico", title: "Subir", "aria-label": "Subir", disabled: i === 0, onclick: () => move(-1) }, icon("up", 17)),
             h("button", { type: "button", class: "ico", title: "Bajar", "aria-label": "Bajar", disabled: i === items.length - 1, onclick: () => move(1) }, icon("down", 17)),
             h("button", { type: "button", class: "ico ico--del", title: "Quitar", "aria-label": "Quitar", disabled: items.length <= min,
-              onclick: async () => { if (await confirmBox("¿Quitar este elemento?", "Quitar")) { items.splice(i, 1); onChange(); draw(); } } }, icon("x", 17)))),
+              onclick: () => {
+                // sin pregunta: se quita y queda a mano "Deshacer"
+                const [gone] = items.splice(i, 1); onChange(); draw();
+                toast("Quitaste un elemento.", "ok", 8000, { label: "Deshacer", run: () => { items.splice(i, 0, gone); onChange(); draw(); } });
+              } }, icon("x", 17)))),
         render(it, i, draw)));
     });
     if (items.length < max) box.append(h("div", { class: "list__add" },
