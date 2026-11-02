@@ -223,11 +223,24 @@ async function publish() {
       if (e.code !== "CONFLICT") throw e;
       // lo de la otra persona se conserva y se le suma lo tuyo (si tocaron la misma pantalla, queda lo tuyo)
       const cur = await limit(fetchRemote());
-      const theirs = changedLabels(remoteData, cur?.data), mine = [...changedSections()].map(sectionLabel), clash = theirs.filter((l) => mine.includes(l));
+      const theirs = changedLabels(remoteData, cur?.data), mine = [...changedSections()].map(sectionLabel);
+      // se junta por elemento (servicio, destino, pregunta…): solo choca lo que cambiaron los dos en el mismo lugar
+      const theirData = strip(withDefaults(structuredClone(cur.data))), mineData = strip(draft), clashSecs = new Set(), joined = {};
+      for (const k of Object.keys(KEY2SEC)) {
+        const base = baseJson[k], mj = JSON.stringify(mineData[k]), tj = JSON.stringify(theirData[k]);
+        if (mj === base) continue;           // yo no lo toqué: queda lo de la otra persona
+        if (tj === base) { joined[k] = mineData[k]; continue; } // ella no lo tocó: queda lo mío
+        const b = JSON.parse(base || "null"), t = theirData[k], m = mineData[k];
+        if (Array.isArray(b) && Array.isArray(t) && Array.isArray(m) && b.length === t.length && b.length === m.length) {
+          let choque = false; const out = b.map((bi, i) => { const bj = JSON.stringify(bi), mi = JSON.stringify(m[i]) !== bj, ti = JSON.stringify(t[i]) !== bj; if (mi && ti && JSON.stringify(m[i]) !== JSON.stringify(t[i])) choque = true; return mi ? m[i] : t[i]; });
+          joined[k] = out; if (choque) clashSecs.add(KEY2SEC[k]);
+        } else { joined[k] = m; clashSecs.add(KEY2SEC[k]); }
+      }
+      const clash = [...clashSecs].map(sectionLabel);
       const joinMsg = `Otra persona publicó cambios mientras editabas (${fmtShort(cur.updated_at)}${theirs.length ? ": " + theirs.join(", ") : ""}). Se pueden juntar los dos: queda lo de esa persona y se suma lo tuyo (${mine.join(", ") || "nada"}).${clash.length ? ` En ${clash.join(", ")} cambiaron los dos: queda lo tuyo.` : ""}`;
       if (!(await confirmBox(joinMsg, "Juntar y publicar", "Cancelar", { focusCancel: true }))) { toast("No se publicó nada. Tu borrador sigue acá.", "ok", 8000, { label: "Actualizar y ver lo nuevo", icon: "redo", run: () => { if (isDirty) stashDraft(); isDirty = false; location.reload(); } }); return; }
       const merged = normal(cur.data); const mineNow = strip(draft);
-      for (const k of Object.keys(KEY2SEC)) if (JSON.stringify(mineNow[k]) !== baseJson[k]) merged[k] = mineNow[k];
+      for (const k of Object.keys(joined)) merged[k] = joined[k];
       at = await saveContent(merged, user.id, cur.updated_at); // otra vez condicional: si hubo una tercera persona, avisa
       sent = merged;
       // lo que escribiste mientras se guardaba no se pierde: queda como cambio sin publicar
