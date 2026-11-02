@@ -1,5 +1,5 @@
-import { h, group, field, toast, confirmBox, kb, icon, plainErr } from "./ui.js";
-import { uploadBlob, publicUrl, BUCKET_FRAMES, listFrameVersions, removeFrameVersion } from "./api.js";
+import { h, group, field, toast, confirmBox, kb, icon, plainErr, hooks } from "./ui.js";
+import { uploadBlob, publicUrl, BUCKET_FRAMES, listFrameVersions, removeFrameVersion, listHistory } from "./api.js";
 import { FRAMES_PROXY } from "../scripts/config.js";
 
 // Convierte los videos que sube el cliente en la secuencia de cuadros del hero, dentro del navegador:
@@ -39,13 +39,14 @@ async function loadClip(file) {
 // la pantalla se redibuja, pero este bloque es el mismo y solo se vuelve a conectar con el borrador actual.
 let KEEP = null;
 export const videoBusy = () => !!KEEP?.S.busy;
+export const videoProgress = () => KEEP?.S.progress ?? 0;
 export const videoHasWork = () => !!KEEP && (KEEP.S.busy || KEEP.S.clips.length > 0 || !!KEEP.S.result);
 
 export function heroVideoTool(ctx) {
   if (KEEP) { KEEP.ref.ctx = ctx; return KEEP.root; }
   const ref = { ctx };
   const D = () => ref.ctx.draft, dirty = () => ref.ctx.dirty(), rerender = () => ref.ctx.rerender();
-  const S = { clips: [], fps: 10, fade: 0.6, mobileX: 0.56, busy: false, cancel: false, result: null };
+  const S = { clips: [], fps: 10, fade: 0.6, mobileX: 0.56, busy: false, cancel: false, result: null, progress: 0 };
   const root = h("div", {});
   KEEP = { S, root, ref };
 
@@ -56,11 +57,13 @@ export function heroVideoTool(ctx) {
   const fileIn = h("input", { type: "file", accept: "video/*", multiple: true, hidden: true });
   const genBtn = h("button", { type: "button", class: "btn", onclick: () => generate() }, "Generar el video de la portada");
   const cancelBtn = h("button", { type: "button", class: "btn btn--ghost", hidden: true, onclick: () => { S.cancel = true; } }, "Cancelar");
+  const addBtn = h("button", { type: "button", class: "btn btn--ghost", onclick: () => fileIn.click() }, icon("plus", 17), "Agregar videos");
 
-  const setBar = (p) => { bar.hidden = false; bar.firstChild.style.transform = `scaleX(${p})`; };
+  const setBar = (p) => { S.progress = p; hooks.repaint?.(); bar.hidden = false; bar.firstChild.style.transform = `scaleX(${p})`; };
   const say = (t, kind) => { msg.textContent = t; msg.className = "status" + (kind ? " is-" + kind : ""); };
 
   function drawClips(keepMsg) {
+    addBtn.disabled = S.busy; // mientras se genera no se pueden sumar pasos
     clipsBox.replaceChildren();
     if (!S.clips.length) clipsBox.append(h("p", { class: "empty" }, "Todavía no agregaste videos. Cada video es un paso del viaje."));
     S.clips.forEach((c, i) => {
@@ -84,6 +87,7 @@ export function heroVideoTool(ctx) {
   }
 
   fileIn.addEventListener("change", async () => {
+    if (S.busy) { fileIn.value = ""; return; }
     const files = [...fileIn.files]; fileIn.value = "";
     for (const f of files) {
       if (S.clips.length >= 8) { toast("El máximo es 8 pasos.", "err"); break; }
@@ -106,7 +110,7 @@ export function heroVideoTool(ctx) {
     if (errs.length) { errs.forEach((e) => toast(e, "err", 8000)); return; }
     if (!(await confirmBox(`Se van a generar y subir ${(Math.floor(total * fps) + 1) * 2} imágenes (unos ${Math.round((Math.floor(total * fps) + 1) * 0.16)} MB). Tarda varios minutos: no cierres esta pestaña ni la computadora. ¿Empezar?`, "Empezar"))) return;
 
-    S.busy = true; S.cancel = false; genBtn.disabled = true; cancelBtn.hidden = false; resultBox.replaceChildren(); drawClips();
+    S.busy = true; S.cancel = false; genBtn.disabled = true; cancelBtn.hidden = false; resultBox.replaceChildren(); drawClips(); hooks.repaint?.();
     const N = Math.floor(total * fps) + 1;
     const version = Date.now().toString(36);
     const w0 = clips[0].w, h0 = clips[0].h;
@@ -167,7 +171,7 @@ export function heroVideoTool(ctx) {
       if (e.message === "cancelado") say("Se canceló. No se cambió nada en la web.", "bad");
       else { say("No se pudo terminar: " + plainErr(e), "bad"); toast(plainErr(e), "err", 9000); }
     } finally {
-      S.busy = false; genBtn.disabled = false; cancelBtn.hidden = true; drawClips(true); // no pisar el mensaje final
+      S.busy = false; genBtn.disabled = false; cancelBtn.hidden = true; drawClips(true); hooks.repaint?.(); // no pisar el mensaje final
     }
   }
 
@@ -186,9 +190,11 @@ export function heroVideoTool(ctx) {
 
   const cleanBtn = h("button", { type: "button", class: "btn btn--ghost", onclick: async () => {
     try {
-      const keep = D().hero.frames?.v; const all = await listFrameVersions(); const old = all.filter((v) => v !== keep && v !== S.result?.version);
+      const keep = new Set([D().hero.frames?.v, S.result?.version, ref.ctx.published?.()?.hero?.frames?.v].filter(Boolean)); // en vivo, en el borrador y recién generada
+      try { (await listHistory()).forEach((r) => { const v = r.data?.hero?.frames?.v; if (v) keep.add(v); }); } catch { /* sin historial: igual se protege lo demás */ } // y las de las últimas publicaciones
+      const all = await listFrameVersions(); const old = all.filter((v) => !keep.has(v));
       if (!old.length) return toast("No hay versiones anteriores para borrar.");
-      if (!(await confirmBox(`Hay ${old.length} versiones anteriores del video guardadas. Se van a borrar para liberar espacio. La versión que está en la web no se toca. ¿Seguir?`, "Borrar"))) return;
+      if (!(await confirmBox(`Hay ${old.length} ${old.length === 1 ? "versión vieja" : "versiones viejas"} del video que ya no usa nadie. Se van a borrar para liberar espacio. No se tocan la que está en la web, la que estás armando ni las de las últimas publicaciones (para poder volver atrás). ¿Seguir?`, "Borrar"))) return;
       cleanBtn.disabled = true; for (const v of old) await removeFrameVersion(v);
       toast(`Se borraron ${old.length} versiones anteriores.`);
     } catch (e) { toast(plainErr(e), "err"); } finally { cleanBtn.disabled = false; }
@@ -203,7 +209,7 @@ export function heroVideoTool(ctx) {
       h("li", {}, "Hacelo desde una computadora con Chrome o Edge y buena conexión: tarda varios minutos y sube unos 75 MB."),
       h("li", {}, "La web actual no se toca hasta que toques \"Guardar y publicar\".")),
     !CAN_WEBP && h("p", { class: "status is-bad" }, "Este navegador no puede crear las imágenes de la portada. Abrí el panel en Chrome o Edge."),
-    h("div", { class: "list__add" }, h("button", { type: "button", class: "btn btn--ghost", onclick: () => fileIn.click() }, icon("plus", 17), "Agregar videos"), fileIn),
+    h("div", { class: "list__add" }, addBtn, fileIn),
     clipsBox,
     h("details", { class: "adv" }, h("summary", {}, "Opciones avanzadas"),
       h("div", { class: "grid3" },

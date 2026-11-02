@@ -1,4 +1,4 @@
-import { h, field, check, group, groupAside, listEditor, imageField, confirmBox, toast, icon, undoToast, hooks } from "./ui.js";
+import { h, field, check, group, groupAside, listEditor, imageField, confirmBox, toast, icon, undoToast, hooks, plainErr } from "./ui.js";
 import { listHistory, withDefaults } from "./api.js";
 import { heroVideoTool } from "./hero-video.js";
 
@@ -172,7 +172,7 @@ function heroSection(ctx) {
               check({ label: "Botón principal (amarillo)", value: c.primary, onChange: (v) => { c.primary = v; dirty(); } }), ext));
         } })),
     group("Textos de cada paso del viaje", hero.frames ? "Cada paso corresponde a uno de los videos que se subieron. Para agregar o quitar pasos, subí el video de nuevo (abajo)." : "Cada paso corresponde a uno de los 5 videos originales. Para cambiar la cantidad de pasos, subí un video nuevo (abajo).",
-      h("div", { class: "list" }, hero.etapas.map((e, i) => h("div", { class: "item" },
+      h("div", { class: "list", "data-list": "etapas" }, hero.etapas.map((e, i) => h("div", { class: "item" },
         h("div", { class: "item__bar" }, h("strong", {}, `Paso ${i + 1}`)),
         h("div", { class: "grid3" },
           field({ label: "Título grande", value: e.title, onInput: (v) => { e.title = v; dirty(); } }),
@@ -191,9 +191,17 @@ const nowMin = () => {
   return (g("hour") % 24) * 60 + g("minute");
 };
 // las próximas salidas de todos los servicios, con la hora de Jujuy
+const DIAS = ["dom", "lun", "mar", "mie", "jue", "vie", "sab"];
+const hoyJ = () => normPlace(new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Jujuy", weekday: "short" }).format(new Date())).replace(".", "").slice(0, 3);
+// "mar · jue", "lun a vie": ¿sale hoy? (si el texto no nombra días, sale todos los días)
+const runsToday = (txt) => {
+  const t = normPlace(txt), set = new Set(DIAS.filter((d) => new RegExp("\\b" + d).test(t)));
+  for (const m of t.matchAll(/\b(dom|lun|mar|mie|jue|vie|sab)\w*\s*a\s*(dom|lun|mar|mie|jue|vie|sab)/g)) { let i = DIAS.indexOf(m[1]); const j = DIAS.indexOf(m[2]); for (let k = 0; k < 7; k++) { set.add(DIAS[i]); if (i === j) break; i = (i + 1) % 7; } }
+  return !set.size || set.has(hoyJ());
+};
 export function nextDepartures(routes, n = 4) {
   const now = nowMin();
-  const all = routes.flatMap((r) => (r.times || []).map((t) => ({ t, m: +t.slice(0, 2) * 60 + +t.slice(3), r }))).sort((a, b) => a.m - b.m);
+  const all = routes.flatMap((r) => (r.times || []).map((t) => ({ t, m: +t.slice(0, 2) * 60 + +t.slice(3), r }))).filter((x) => !x.r.days?.[x.t] || runsToday(x.r.days[x.t])).sort((a, b) => a.m - b.m);
   const next = all.filter((x) => x.m >= now);
   return { list: (next.length ? next : all).slice(0, n), tomorrow: !next.length };
 }
@@ -479,18 +487,18 @@ function historySection({ draft, replaceDraft, published }) {
       if (!labs.length) return; // las publicaciones sin cambios de contenido no aportan nada
       shownRows++;
       box.append(h("div", { class: "item item--row" },
-      h("div", {}, h("strong", {}, `Antes de la publicación del ${new Date(r.saved_at).toLocaleString("es-AR", { dateStyle: "long", timeStyle: "short" })}`), h("small", { class: "hint" }, `Esa publicación cambió: ${labs.join(", ")}`)),
+      h("div", {}, h("strong", {}, `Antes de la publicación del ${fmtDate(r.saved_at)}`), h("small", { class: "hint" }, `Esa publicación cambió: ${labs.join(", ")}`)),
       h("button", { type: "button", class: "btn btn--ghost", onclick: () => {
         undoToast("Volviste a como estaba antes de esa publicación. Todavía no está publicado: revisalo y tocá Guardar y publicar.", () => replaceDraft(r.data));
       } }, "Volver a como estaba antes")));
     });
     if (!shownRows) box.append(h("p", { class: "empty" }, "Todavía no hay publicaciones con cambios para volver atrás."));
-  }).catch((e) => { box.replaceChildren(h("p", { class: "err" }, e.message)); });
+  }).catch((e) => { box.replaceChildren(h("p", { class: "err" }, plainErr(e))); });
   return h("div", { class: "stack" }, group("Versiones anteriores", "Las últimas 20 publicaciones. Cada una dice qué cambió: cargala en el editor para volver a como estaba.", box));
 }
 
 /* ---------- resumen: lo que le sirve al dueño al entrar ---------- */
-export const fmtDate = (d) => new Date(d).toLocaleString("es-AR", { dateStyle: "long", timeStyle: "short" });
+export const fmtDate = (d) => new Date(d).toLocaleString("es-AR", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit", hour12: false });
 
 const nextIn = (nd) => { const x = nd.list[0]; if (!x || nd.tomorrow) return ""; const m = x.m - nowMin(); return m <= 0 ? " La próxima sale ahora." : m < 60 ? ` La próxima sale en ${m} min.` : ` La próxima sale en ${Math.floor(m / 60)} h ${m % 60} min.`; };
 function summarySection({ draft, goto, lastPublished, published }) {
@@ -564,6 +572,12 @@ export function validate(d) {
   if (fi >= 0) add("contacto", "Preguntas: hay preguntas o respuestas vacías.", { item: fi, list: "faq", field: d.faq[fi][0]?.trim() ? "Respuesta" : "Pregunta" });
   if (!d.hero.headline?.trim()) add("hero", "Portada: falta el titular.", { field: "Titular" });
   const hrefOk = (v) => /^#\w+/.test(v) || /^tel:\+?\d{8,}/.test(v) || /^https?:\/\/[^\s/]+\.[^\s/]+/.test(v);
+  const ti = d.hero.etapas.findIndex((e) => !e.title?.trim());
+  if (ti >= 0) add("hero", `Portada: el paso ${ti + 1} del viaje no tiene título.`, { item: ti, list: "etapas", field: "Título grande" });
+  const si = d.services.findIndex((x) => !x[0]?.trim());
+  if (si >= 0) add("galeria", "Fotos: hay una comodidad a bordo sin nombre.", { item: si, list: "services", field: "Nombre" });
+  const fi2 = d.texts.facts.findIndex((x) => !String(x).trim());
+  if (fi2 >= 0) add("textos", "Textos: hay una frase corta vacía.", { item: fi2, list: "facts", field: "Texto" });
   const ci = d.hero.ctas.findIndex((c) => !(c.label?.trim() && hrefOk(String(c.href || "").trim())));
   if (ci >= 0) add("hero", "Portada: hay botones sin texto o con un enlace incompleto.", { item: ci, list: "ctas", field: d.hero.ctas[ci].label?.trim() ? "A dónde lleva" : "Texto del botón" });
   return e;

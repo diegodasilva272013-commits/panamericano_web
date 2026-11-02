@@ -31,6 +31,12 @@ export async function fetchRemote() {
   if (error) throw new Error("No se pudo leer el contenido: " + error.message);
   return data?.[0] || null;
 }
+// solo la fecha de la última publicación (para consultar cada minuto sin bajar todo el contenido)
+export async function fetchStamp() {
+  const { data, error } = await sb.from("site_content").select("updated_at").eq("id", "main").limit(1);
+  if (error) throw new Error("No se pudo leer el contenido: " + error.message);
+  return data?.[0]?.updated_at || null;
+}
 export const withDefaults = (remote) => mergeContent(structuredClone(DEFAULT_CONTENT), remote || {});
 
 // expectedAt: la versión que cargaste. Si otra persona publicó después, la base no escribe y se avisa (code CONFLICT).
