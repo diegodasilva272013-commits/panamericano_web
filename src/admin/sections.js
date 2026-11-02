@@ -27,7 +27,7 @@ export function parseTimes(text) {
 const stopsToText = (r) => (r.stops || []).join(", ");
 const parseStops = (s) => String(s).split(/[,;\n]+/).map((x) => x.trim()).filter(Boolean);
 
-export const fmtShort = (d) => new Date(d).toLocaleString("es-AR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false }).replace(",", "");
+export const fmtShort = (d) => new Date(d).toLocaleString("es-AR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).replace(",", "");
 // 5493884640178 -> +54 9 388 464-0178 (como lo ve el pasajero)
 const fmtWa = (n) => { const d = String(n || "").replace(/\D/g, ""); return /^549\d{10}$/.test(d) ? `+54 9 ${d.slice(3, 6)} ${d.slice(6, 9)}-${d.slice(9)}` : d ? "+" + d : "…"; };
 function destPreview(items) {
@@ -117,8 +117,8 @@ function linkPicker(c, draft, dirty, after) {
   const extra = h("div", { class: "linkx" });
   const drawExtra = () => {
     const k = sel.value; extra.replaceChildren();
-    if (k === "web") extra.append(field({ label: "Dirección de la página", value: c.href, mono: true, hint: "Completa, por ejemplo https://www.ejemplo.com", validate: (v) => (/^https?:\/\/\S+\.\S+/.test(v.trim()) ? "" : "Escribila completa, empezando con https://"), onInput: (v) => { c.href = v.trim(); dirty(); } }));
-    if (k === "tel") extra.append(field({ label: "Teléfono", value: String(c.href || "").replace(/^tel:/, ""), mono: true, hint: "Con código de país, por ejemplo +543884254331", validate: (v) => (v.replace(/\D/g, "").length >= 8 ? "" : "Escribí el teléfono completo."), onInput: (v) => { c.href = "tel:" + v.replace(/[^\d+]/g, ""); dirty(); } }));
+    if (k === "web") extra.append(field({ label: "Dirección de la página", help: "La dirección completa de la página a la que lleva el botón, empezando con https://.", value: c.href, mono: true, hint: "Completa, por ejemplo https://www.ejemplo.com", validate: (v) => (/^https?:\/\/\S+\.\S+/.test(v.trim()) ? "" : "Escribila completa, empezando con https://"), onInput: (v) => { c.href = v.trim(); dirty(); } }));
+    if (k === "tel") extra.append(field({ label: "Teléfono", help: "El número al que llama el botón cuando alguien lo toca desde el celular.", value: String(c.href || "").replace(/^tel:/, ""), mono: true, hint: "Con código de país, por ejemplo +543884254331", validate: (v) => (v.replace(/\D/g, "").length >= 8 ? "" : "Escribí el teléfono completo."), onInput: (v) => { c.href = "tel:" + v.replace(/[^\d+]/g, ""); dirty(); } }));
   };
   sel.addEventListener("change", () => {
     const k = sel.value;
@@ -158,7 +158,7 @@ function heroSection(ctx) {
   return h("div", { class: "stack" },
     groupAside("Titular de entrada", "Lo primero que se ve al abrir la web.", hpv.el, h("div", { class: "grid2" },
       field({ label: "Titular", value: hero.headline, validate: (v) => (v.trim() ? "" : "Falta el titular. Es la frase grande de la portada."), onInput: (v) => { hero.headline = v; dirty(); } }),
-      field({ label: "Frase debajo del titular", value: hero.subheadline, onInput: (v) => { hero.subheadline = v; dirty(); } }),
+      field({ label: "Frase debajo del titular", long: true, rows: 2, value: hero.subheadline, onInput: (v) => { hero.subheadline = v; dirty(); } }),
       field({ label: "Invitación a deslizar", value: hero.hint, onInput: (v) => { hero.hint = v; dirty(); } }))),
     group("Botones de la portada", "Los botones que van debajo del titular. Elegí qué dice cada uno y a dónde lleva.",
       listEditor({ id: "ctas", items: hero.ctas, onChange: dirty, addLabel: "Agregar botón", max: 3, min: 1, make: () => ({ label: "Nuevo botón", href: "#horarios" }), title: (c) => c.label || "Botón",
@@ -194,16 +194,18 @@ const nowMin = () => {
 const DIAS = ["dom", "lun", "mar", "mie", "jue", "vie", "sab"];
 const hoyJ = () => normPlace(new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Jujuy", weekday: "short" }).format(new Date())).replace(".", "").slice(0, 3);
 // "mar · jue", "lun a vie": ¿sale hoy? (si el texto no nombra días, sale todos los días)
-const runsToday = (txt) => {
+const runsToday = (txt, desde = 0) => {
   const t = normPlace(txt), set = new Set(DIAS.filter((d) => new RegExp("\\b" + d).test(t)));
   for (const m of t.matchAll(/\b(dom|lun|mar|mie|jue|vie|sab)\w*\s*a\s*(dom|lun|mar|mie|jue|vie|sab)/g)) { let i = DIAS.indexOf(m[1]); const j = DIAS.indexOf(m[2]); for (let k = 0; k < 7; k++) { set.add(DIAS[i]); if (i === j) break; i = (i + 1) % 7; } }
-  return !set.size || set.has(hoyJ());
+  return !set.size || set.has(DIAS[(DIAS.indexOf(hoyJ()) + desde) % 7]); // desde = 1: el día de mañana
 };
 export function nextDepartures(routes, n = 4) {
   const now = nowMin();
-  const all = routes.flatMap((r) => (r.times || []).map((t) => ({ t, m: +t.slice(0, 2) * 60 + +t.slice(3), r }))).filter((x) => !x.r.days?.[x.t] || runsToday(x.r.days[x.t])).sort((a, b) => a.m - b.m);
-  const next = all.filter((x) => x.m >= now);
-  return { list: (next.length ? next : all).slice(0, n), tomorrow: !next.length };
+  const todos = routes.flatMap((r) => (r.times || []).map((t) => ({ t, m: +t.slice(0, 2) * 60 + +t.slice(3), r })));
+  const hoy = todos.filter((x) => !x.r.days?.[x.t] || runsToday(x.r.days[x.t])).sort((a, b) => a.m - b.m);
+  const next = hoy.filter((x) => x.m >= now);
+  const manana = todos.filter((x) => !x.r.days?.[x.t] || runsToday(x.r.days[x.t], 1)).sort((a, b) => a.m - b.m);
+  return { list: (next.length ? next : manana).slice(0, n), tomorrow: !next.length };
 }
 // lugares que existen en Horarios (para avisar si un destino no coincide con ninguno)
 const placeList = (d) => [...new Set(d.routes.flatMap((r) => [r.from, r.to, ...(r.stops || [])]).map((x) => String(x || "").replace(/\*/g, "").trim()).filter(Boolean))];
@@ -473,7 +475,7 @@ function boardSection({ draft, dirty }) {
       listEditor({ id: "services", items: draft.services, onChange: dirty, addLabel: "Agregar comodidad", max: 10, title: (s) => s[0] || "Comodidad", make: () => ["", ""],
         render: (s) => h("div", { class: "grid2" },
           field({ label: "Nombre", value: s[0], onInput: (v) => { s[0] = v; dirty(); } }),
-          field({ label: "Detalle", value: s[1], onInput: (v) => { s[1] = v; dirty(); } })) })));
+          field({ label: "Detalle", help: "Una frase corta que explica la comodidad.", value: s[1], onInput: (v) => { s[1] = v; dirty(); } })) })));
 }
 
 /* ---------- contacto ---------- */
@@ -532,7 +534,8 @@ function historySection({ draft, replaceDraft, published }) {
 }
 
 /* ---------- resumen: lo que le sirve al dueño al entrar ---------- */
-export const fmtDate = (d) => new Date(d).toLocaleString("es-AR", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit", hour12: false });
+// una sola forma de escribir fecha y hora en todo el panel
+export const fmtDate = (d) => fmtShort(d);
 
 const nextIn = (nd) => { const x = nd.list[0]; if (!x || nd.tomorrow) return ""; const m = x.m - nowMin(); return m <= 0 ? " La próxima sale ahora." : m < 60 ? ` La próxima sale en ${m} min.` : ` La próxima sale en ${Math.floor(m / 60)} h ${m % 60} min.`; };
 function summarySection({ draft, goto, lastPublished, published }) {
@@ -605,6 +608,11 @@ export function validate(d) {
   const fi = d.faq.findIndex((f) => !(f[0]?.trim() && f[1]?.trim()));
   if (fi >= 0) add("contacto", "Preguntas: hay preguntas o respuestas vacías.", { item: fi, list: "faq", field: d.faq[fi][0]?.trim() ? "Respuesta" : "Pregunta" });
   if (!d.hero.headline?.trim()) add("hero", "Portada: falta el titular.", { field: "Titular" });
+  for (const [gt, , fields] of TEXT_GROUPS) for (const [path, label, long] of fields) {
+    if (!long && !String(get(d, path) ?? "").trim()) add("textos", `Textos: falta "${label}" en "${gt}".`, { field: label });
+  }
+  if (!String(d.site.title ?? "").trim()) add("contacto", "Contacto: falta el título de la pestaña del navegador.", { field: "Título de la pestaña" });
+  if (String(d.site.phoneLabel || "").replace(/\D/g, "").length < 8) add("contacto", "Contacto: falta el teléfono central.", { field: "Teléfono central" });
   const hrefOk = (v) => /^#\w+/.test(v) || /^tel:\+?\d{8,}/.test(v) || /^https?:\/\/[^\s/]+\.[^\s/]+/.test(v);
   const ti = d.hero.etapas.findIndex((e) => !e.title?.trim());
   if (ti >= 0) add("hero", `Portada: el paso ${ti + 1} del viaje no tiene título.`, { item: ti, list: "etapas", field: "Título grande" });

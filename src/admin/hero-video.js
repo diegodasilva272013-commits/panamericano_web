@@ -39,6 +39,8 @@ async function loadClip(file) {
 // la pantalla se redibuja, pero este bloque es el mismo y solo se vuelve a conectar con el borrador actual.
 let KEEP = null;
 export const videoBusy = () => !!KEEP?.S.busy;
+// al cerrar sesión el generador se descarta (no queda trabajo de otra persona en memoria)
+export const resetVideo = () => { KEEP?.S.clips.forEach((c) => { try { URL.revokeObjectURL(c.url); } catch { /* ya liberada */ } }); KEEP = null; };
 export const videoProgress = () => KEEP?.S.progress ?? 0;
 export const videoHasWork = () => !!KEEP && (KEEP.S.busy || KEEP.S.clips.length > 0 || !!KEEP.S.result);
 
@@ -46,7 +48,7 @@ export function heroVideoTool(ctx) {
   if (KEEP) { KEEP.ref.ctx = ctx; return KEEP.root; }
   const ref = { ctx };
   const D = () => ref.ctx.draft, dirty = () => ref.ctx.dirty(), rerender = () => ref.ctx.rerender();
-  const S = { clips: [], fps: 10, fade: 0.6, mobileX: 0.56, busy: false, cancel: false, result: null, progress: 0 };
+  const S = { clips: [], fps: 10, fade: 0.6, mobileX: 0.56, busy: false, cancel: false, result: null, progress: 0, version: null };
   const root = h("div", {});
   KEEP = { S, root, ref };
 
@@ -110,9 +112,9 @@ export function heroVideoTool(ctx) {
     if (errs.length) { errs.forEach((e) => toast(e, "err", 8000)); return; }
     if (!(await confirmBox(`Se van a generar y subir ${(Math.floor(total * fps) + 1) * 2} imágenes (unos ${Math.round((Math.floor(total * fps) + 1) * 0.16)} MB). Tarda varios minutos: no cierres esta pestaña ni la computadora. ¿Empezar?`, "Empezar"))) return;
 
-    S.busy = true; S.cancel = false; genBtn.disabled = true; cancelBtn.hidden = false; resultBox.replaceChildren(); drawClips(); hooks.repaint?.();
+    S.busy = true; S.cancel = false; cleanBtn.disabled = true; genBtn.disabled = true; cancelBtn.hidden = false; resultBox.replaceChildren(); drawClips(); hooks.repaint?.();
     const N = Math.floor(total * fps) + 1;
-    const version = Date.now().toString(36);
+    const version = Date.now().toString(36); S.version = version; // desde ya queda protegida del borrado de versiones viejas
     const w0 = clips[0].w, h0 = clips[0].h;
     const base = document.createElement("canvas"); base.width = w0; base.height = h0; const bx = base.getContext("2d");
     const dW = Math.min(OUT.desktop.width, w0), dH = Math.round(dW * h0 / w0);
@@ -166,6 +168,7 @@ export function heroVideoTool(ctx) {
         etapas: clips.map((c, i) => ({ clip: i, rail: c.rail.trim() || c.title.trim(), title: c.title.trim(), detail: c.detail.trim() })),
       };
       say(`Listo: ${N} cuadros por formato subidos. Revisá las vistas previas y tocá "Usar este video".`, "ok");
+      if (!root.isConnected) toast("El video de la portada está listo. Entrá a «Portada y video» para usarlo.", "ok", 15000);
       showResult(thumbs);
     } catch (e) {
       if (e.message === "cancelado") say("Se canceló. No se cambió nada en la web.", "bad");
@@ -190,14 +193,18 @@ export function heroVideoTool(ctx) {
 
   const cleanBtn = h("button", { type: "button", class: "btn btn--ghost", onclick: async () => {
     try {
-      const keep = new Set([D().hero.frames?.v, S.result?.version, ref.ctx.published?.()?.hero?.frames?.v].filter(Boolean)); // en vivo, en el borrador y recién generada
-      try { (await listHistory()).forEach((r) => { const v = r.data?.hero?.frames?.v; if (v) keep.add(v); }); } catch { /* sin historial: igual se protege lo demás */ } // y las de las últimas publicaciones
-      const all = await listFrameVersions(); const old = all.filter((v) => !keep.has(v));
+      const keep = new Set([D().hero.frames?.v, S.result?.version, S.version, ref.ctx.published?.()?.hero?.frames?.v].filter(Boolean)); // en vivo, en el borrador y recién generada
+      try { (await listHistory()).forEach((r) => { const v = r.data?.hero?.frames?.v; if (v) keep.add(v); }); } // y las de las últimas publicaciones
+      catch { return toast("No se pudo comprobar qué versiones usan las publicaciones anteriores, así que no se borró nada. Probá de nuevo.", "err", 8000); }
+      try { const d = JSON.parse(localStorage.getItem("pm-admin-draft") || "null"); const v = d?.data?.hero?.frames?.v; if (v) keep.add(v); } catch { /* sin borrador guardado */ } // y la del borrador guardado en este navegador
+      const all = await listFrameVersions();
+      const joven = (v) => { const t = parseInt(v, 36); return Number.isFinite(t) && Date.now() - t < 48 * 3600 * 1000; }; // nunca se borra lo de las últimas 48 horas
+      const old = all.filter((v) => !keep.has(v) && !joven(v));
       if (!old.length) return toast("No hay versiones anteriores para borrar.");
       if (!(await confirmBox(`Hay ${old.length} ${old.length === 1 ? "versión vieja" : "versiones viejas"} del video que ya no usa nadie. Se van a borrar para liberar espacio. No se tocan la que está en la web, la que estás armando ni las de las últimas publicaciones (para poder volver atrás). ¿Seguir?`, "Borrar"))) return;
       cleanBtn.disabled = true; for (const v of old) await removeFrameVersion(v);
       toast(`Se borraron ${old.length} versiones anteriores.`);
-    } catch (e) { toast(plainErr(e), "err"); } finally { cleanBtn.disabled = false; }
+    } catch (e) { toast(plainErr(e), "err"); } finally { cleanBtn.disabled = S.busy; }
   } }, "Borrar versiones anteriores");
 
   drawClips();

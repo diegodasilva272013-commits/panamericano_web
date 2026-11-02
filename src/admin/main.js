@@ -1,6 +1,6 @@
 import { configured, getSession, signIn, signOut, isAdmin, fetchRemote, withDefaults, saveContent, listHistory, fetchStamp } from "./api.js";
 import { h, toast, confirmBox, icon, plainErr, hooks, undoToast } from "./ui.js";
-import { videoBusy, videoHasWork, videoProgress } from "./hero-video.js";
+import { videoBusy, videoHasWork, videoProgress, resetVideo } from "./hero-video.js";
 import { SECTIONS, KEY2SEC, validate, strip, fmtDate, fmtShort, nextDepartures, commitPendingEdit, hasPendingEdit, forgetPendingEdit, changedLabels } from "./sections.js";
 
 const app = document.getElementById("app");
@@ -11,6 +11,8 @@ const store = {
   set: (k, v) => { try { localStorage.setItem(k, v); return true; } catch { return false; } },
   del: (k) => { try { localStorage.removeItem(k); } catch { /* sin almacenamiento */ } },
 };
+// en Mac el atajo es ⌘ (el panel acepta los dos)
+const MOD = /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || "") ? "⌘" : "Ctrl";
 const DRAFT_KEY = "pm-admin-draft";
 const clearDraft = () => { store.del(DRAFT_KEY); store.del(DRAFT_KEY + "-next"); }; // borra el borrador y lo que se guardó aparte mientras había un aviso abierto
 // la base devuelve "…+00:00" y el panel guarda "…Z": son el mismo instante con distinto texto
@@ -184,11 +186,11 @@ function paintStatus() {
   const ch = isDirty ? [...changedSections()] : [];
   statusEl.title = ch.map(sectionLabel).join(", ");
   const head = isDirty ? (ch.length > 1 ? `Hay cambios sin publicar en ${ch.length} pantallas` : ch.length ? `Hay cambios sin publicar en ${sectionLabel(ch[0])}` : "Hay cambios sin publicar") : lastPub ? `Publicado ${ago(lastPub)}` : "Todo publicado";
-  const sub = videoBusy() ? `Generando el video de la portada… ${Math.round(videoProgress() * 100)}%` : isDirty ? (stashedOk ? "Cambios guardados en este navegador" : stashFailed ? "No se pudieron guardar en este navegador: publicá cuanto antes" : "Guardando en este navegador…") : hasPendingEdit() ? "Hora sin confirmar" : "Sin cambios pendientes";
+  const sub = videoBusy() ? `Generando el video de la portada… ${Math.floor(videoProgress() * 10) * 10}%` : isDirty ? (stashedOk ? "Cambios guardados en este navegador" : stashFailed ? "No se pudieron guardar en este navegador: publicá cuanto antes" : "Guardando en este navegador…") : hasPendingEdit() ? "Hora sin confirmar" : "Sin cambios pendientes";
   const sig = head + "|" + sub + "|" + isDirty;
   if (statusEl.dataset.sig !== sig) { // solo se toca el DOM si cambió: un lector de pantalla no repite lo mismo
     statusEl.dataset.sig = sig;
-    statusEl.replaceChildren(h("span", { class: "state__t" }, head), h("small", { class: "state__saved" + (isDirty && stashFailed && !stashedOk ? " state__saved--bad" : "") }, sub));
+    statusEl.replaceChildren(h("span", { class: "state__t" }, head), h("small", { class: "state__saved" + (isDirty && stashFailed && !stashedOk ? " state__saved--bad" : "") + (videoBusy() ? " state__saved--video" : "") }, sub));
   }
   statusEl.className = "state " + (isDirty ? "is-dirty" : "is-ok");
   saveBtn.disabled = !(isDirty || hasPendingEdit());
@@ -199,7 +201,7 @@ function paintStatus() {
   document.querySelector(".side__toggle")?.classList.toggle("has-changes", ch.length > 0);
   paintErrBar();
 }
-const saveLabel = () => saveBtn.replaceChildren(h("span", { class: "lbl-dirty" }, "Guardar y publicar", h("kbd", { class: "kbd-inline" }, "Ctrl S")), h("span", { class: "lbl-clean" }, "Sin cambios"));
+const saveLabel = () => saveBtn.replaceChildren(h("span", { class: "lbl-dirty" }, "Guardar y publicar", h("kbd", { class: "kbd-inline" }, MOD + " S")), h("span", { class: "lbl-clean" }, "Sin cambios"));
 
 async function publish() {
   if (!commitPendingEdit()) { toast("Hay una hora a medio escribir que no es válida. Corregila (por ejemplo 14:30) o apretá Esc para cerrarla.", "err", 7000); return; } // una hora a medio escribir se confirma antes de publicar
@@ -223,11 +225,15 @@ async function publish() {
       const cur = await limit(fetchRemote());
       const theirs = changedLabels(remoteData, cur?.data), mine = [...changedSections()].map(sectionLabel), clash = theirs.filter((l) => mine.includes(l));
       const joinMsg = `Otra persona publicó cambios mientras editabas (${fmtShort(cur.updated_at)}${theirs.length ? ": " + theirs.join(", ") : ""}). Se pueden juntar los dos: queda lo de esa persona y se suma lo tuyo (${mine.join(", ") || "nada"}).${clash.length ? ` En ${clash.join(", ")} cambiaron los dos: queda lo tuyo.` : ""}`;
-      if (!(await confirmBox(joinMsg, "Juntar y publicar", "Cancelar", { focusCancel: true }))) { toast("No se publicó nada. Tu borrador sigue acá.", "ok", 8000, { label: "Actualizar y ver lo nuevo", icon: "redo", run: () => { if (isDirty) stashDraft(); location.reload(); } }); return; }
+      if (!(await confirmBox(joinMsg, "Juntar y publicar", "Cancelar", { focusCancel: true }))) { toast("No se publicó nada. Tu borrador sigue acá.", "ok", 8000, { label: "Actualizar y ver lo nuevo", icon: "redo", run: () => { if (isDirty) stashDraft(); isDirty = false; location.reload(); } }); return; }
       const merged = normal(cur.data); const mineNow = strip(draft);
       for (const k of Object.keys(KEY2SEC)) if (JSON.stringify(mineNow[k]) !== baseJson[k]) merged[k] = mineNow[k];
       at = await saveContent(merged, user.id, cur.updated_at); // otra vez condicional: si hubo una tercera persona, avisa
-      sent = merged; draft = withDefaults(structuredClone(merged)); redraw();
+      sent = merged;
+      // lo que escribiste mientras se guardaba no se pierde: queda como cambio sin publicar
+      const late = strip(draft); const next = { ...merged };
+      for (const k of Object.keys(KEY2SEC)) if (JSON.stringify(late[k]) !== JSON.stringify(mineNow[k])) next[k] = late[k];
+      draft = withDefaults(structuredClone(next)); histReset(); redraw();
     }
     remoteData = sent; lastPub = new Date(at); lastPubRaw = at; if (otherBar) { otherBar.hidden = true; otherSeen = null; } computeBase(); histSave(); clearDraft(); clearTimeout(stashTimer);
     isDirty = false; paintStatus();
@@ -251,7 +257,7 @@ const help = (sec) => confirmBox(h("div", { class: "help" },
 const shortcuts = () => confirmBox(h("div", { class: "help" },
   h("h3", {}, "Atajos del teclado"),
   h("dl", { class: "keys" },
-    ...[["Ctrl + S", "Guardar y publicar"], ["Ctrl + K", "Buscar una pantalla, un servicio o una ayuda"], ["Ctrl + Z", "Deshacer el último cambio, también mientras escribís"], ["Ctrl + Shift + Z", "Rehacer"],
+    ...[[MOD + " + S", "Guardar y publicar"], [MOD + " + K", "Buscar una pantalla, un servicio o una ayuda"], [MOD + " + Z", "Deshacer el último cambio, también mientras escribís"], [MOD + " + Shift + Z", "Rehacer"],
       ["Enter", "Confirmar una hora"], ["Esc", "Cerrar la ventanita o el aviso"], ["?", "Ver esta lista"]].flatMap(([k, d]) => [h("dt", {}, h("kbd", {}, k)), h("dd", {}, d)]))),
   "Entendido", false);
 
@@ -341,7 +347,7 @@ function shell(pending) {
         box.classList.add("is-bad");
         let e = box.querySelector(".err"); if (!e) { e = h("small", { class: "err", role: "alert" }); box.append(e); }
         const m = (msg || "").split(": ").slice(1).join(": ") || msg || "Revisá este dato."; e.textContent = m.charAt(0).toUpperCase() + m.slice(1);
-        const inp = box.querySelector("input,textarea"); inp?.focus({ preventScroll: true }); inp?.setAttribute("aria-invalid", "true");
+        const inp = box.querySelector("input,textarea,select"); inp?.focus({ preventScroll: true }); inp?.setAttribute("aria-invalid", "true");
         box.addEventListener("input", () => { box.classList.remove("is-bad"); e.textContent = ""; }, { once: true });
       }
     }
@@ -387,12 +393,13 @@ function shell(pending) {
     h("div", { class: "side__bar" }, brand(),
       h("button", { type: "button", class: "side__toggle", "aria-label": "Abrir el menú", "aria-expanded": "false", onclick: (e) => { const o = sideEl.classList.toggle("is-open"); e.currentTarget.setAttribute("aria-expanded", String(o)); } }, icon("menu", 22), h("span", { class: "side__toggle__t" }, "Menú"))),
     h("div", { class: "side__body" },
-      h("button", { type: "button", class: "side__search", title: "Buscar una pantalla, un servicio o una ayuda (Ctrl+K)", onclick: palette }, icon("search", 17), h("span", {}, "Ir a…"), h("kbd", {}, "Ctrl K")),
+      h("button", { type: "button", class: "side__search", title: `Buscar una pantalla, un servicio o una ayuda (${MOD}+K)`, onclick: palette }, icon("search", 17), h("span", {}, "Ir a…"), h("kbd", {}, MOD + " K")),
       navEl,
       h("div", { class: "side__foot" }, h("small", {}, user.email),
         h("a", { class: "link", href: "/", target: "_blank", rel: "noopener" }, icon("external", 16), "Ver la web"),
         h("button", { type: "button", class: "link", onclick: async () => {
-          if (isDirty && !(await confirmBox("Hay cambios sin publicar. Quedan guardados en este navegador para cuando vuelvas a entrar. ¿Salir igual?", "Salir", "Cancelar", { focusCancel: true }))) return;
+          if ((isDirty || videoBusy()) && !(await confirmBox(videoBusy() ? "Se está generando el video de la portada. Si salís ahora, se corta y hay que empezar de nuevo. ¿Salir igual?" : "Hay cambios sin publicar. Quedan guardados en este navegador para cuando vuelvas a entrar. ¿Salir igual?", "Salir", "Cancelar", { focusCancel: true }))) return;
+          resetVideo();
           if (isDirty) stashDraft();
           isDirty = false; await signOut(); await boot();
         } }, icon("logout", 17), "Cerrar sesión"))));
@@ -441,8 +448,8 @@ addEventListener("keydown", (e) => {
   if (e.key === "?" && !typing() && saveBtn?.isConnected && !document.querySelector(".modal")) { e.preventDefault(); shortcuts(); return; }
   if (!(e.ctrlKey || e.metaKey)) return;
   const k = e.key.toLowerCase();
-  if (k === "z" && saveBtn?.isConnected && !document.querySelector(".modal") && !e.isComposing && !document.activeElement?.closest(".svc__find,.tb__pop,.login")) { e.preventDefault(); histGo(e.shiftKey ? 1 : -1); return; } // un solo deshacer para todo, también dentro de los campos
-  if (k === "y" && saveBtn?.isConnected && !document.querySelector(".modal") && !document.activeElement?.closest(".svc__find,.tb__pop,.login")) { e.preventDefault(); histGo(1); return; }
+  if (k === "z" && saveBtn?.isConnected && !document.querySelector(".modal") && !e.isComposing && !document.activeElement?.closest(".svc__find,.tb__pop,.tb__add,.tb__tool,.bulk__row,.route__add,.login,select")) { e.preventDefault(); histGo(e.shiftKey ? 1 : -1); return; } // un solo deshacer para todo, también dentro de los campos
+  if (k === "y" && saveBtn?.isConnected && !document.querySelector(".modal") && !document.activeElement?.closest(".svc__find,.tb__pop,.tb__add,.tb__tool,.bulk__row,.route__add,.login,select")) { e.preventDefault(); histGo(1); return; }
   if (k === "s") {
     e.preventDefault();
     if (saveBtn?.isConnected && !saveBtn.disabled && !document.querySelector(".modal")) publish();
@@ -450,7 +457,7 @@ addEventListener("keydown", (e) => {
 });
 setInterval(() => { if (statusEl?.isConnected && !isDirty) paintStatus(); }, 30000);
 // si otra persona publica mientras tenés el panel abierto, se avisa (se consulta cada minuto)
-setInterval(async () => {
+const checkOther = async () => {
   if (!statusEl?.isConnected || !lastPubRaw || navigator.onLine === false || document.hidden) return;
   try {
     const stamp = await limit(fetchStamp());
@@ -459,10 +466,12 @@ setInterval(async () => {
       otherSeen = cur.updated_at; const labs = changedLabels(remoteData, cur.data);
       otherBar.hidden = false;
       otherBar.replaceChildren(h("span", {}, `Otra persona publicó cambios (${fmtShort(cur.updated_at)}${labs.length ? ": " + labs.join(", ") : ""}). ${isDirty ? "Tus cambios siguen acá y se guardan." : ""}`),
-        h("button", { type: "button", class: "link", onclick: () => { if (isDirty) stashDraft(); location.reload(); } }, "Actualizar y ver lo nuevo"));
+        h("button", { type: "button", class: "link", onclick: () => { if (isDirty) stashDraft(); isDirty = false; location.reload(); } }, "Actualizar y ver lo nuevo"));
     }
   } catch { /* sin conexión: se vuelve a intentar */ }
-}, 60000);
+};
+setInterval(checkOther, 60000);
+addEventListener("visibilitychange", () => { if (!document.hidden) checkOther(); });
 addEventListener("online", () => { if (netBar) netBar.hidden = true; if (document.body.dataset.retry) boot(); });
 addEventListener("offline", () => { if (netBar) netBar.hidden = false; });
 addEventListener("beforeunload", (e) => { if (isDirty || videoBusy()) { if (isDirty) stashDraft(); e.preventDefault(); e.returnValue = ""; } });

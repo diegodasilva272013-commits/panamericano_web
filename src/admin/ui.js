@@ -162,13 +162,13 @@ export function check({ label, value, onChange }) {
 }
 export function group(title, desc, ...kids) {
   return h("section", { class: "card" },
-    h("header", { class: "card__head" }, h("h3", {}, title), desc && h("p", {}, desc)),
+    h("header", { class: "card__head" }, h("h3", { role: "heading", "aria-level": "2" }, title), desc && h("p", {}, desc)),
     h("div", { class: "card__body" }, ...kids));
 }
 // igual que group, pero con una vista previa en vivo pegada bajo el título
 export function groupAside(title, desc, aside, ...kids) {
   return h("section", { class: "card card--aside" },
-    h("header", { class: "card__head" }, h("h3", {}, title), desc && h("p", {}, desc), aside),
+    h("header", { class: "card__head" }, h("h3", { role: "heading", "aria-level": "2" }, title), desc && h("p", {}, desc), aside),
     h("div", { class: "card__body" }, ...kids));
 }
 export const kb = (n) => (n > 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.round(n / 1024) + " KB");
