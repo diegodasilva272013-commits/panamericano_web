@@ -1,7 +1,9 @@
 import { h, field, check, group, groupAside, listEditor, imageField, confirmBox, toast, icon, undoToast, hooks } from "./ui.js";
-import { listHistory } from "./api.js";
+import { listHistory, withDefaults } from "./api.js";
 import { heroVideoTool } from "./hero-video.js";
 
+// los datos viejos pueden no tener todas las claves: se comparan ya completados con los valores por defecto
+const normData = (d) => strip(withDefaults(structuredClone(d ?? {})));
 export const KEY2SEC = { hero: "hero", texts: "textos", site: "contacto", routes: "horarios", destinations: "destinos", gallery: "galeria", boardImage: "galeria", services: "galeria", boleterias: "contacto", faq: "contacto" };
 const changedIds = (a, b) => { const s = new Set(); for (const k of Object.keys(KEY2SEC)) if (JSON.stringify(a?.[k]) !== JSON.stringify(b?.[k])) s.add(KEY2SEC[k]); return [...s]; };
 const get = (o, path) => path.split(".").reduce((a, k) => (a == null ? a : a[k]), o);
@@ -212,7 +214,7 @@ let activePending = null;
 export const commitPendingEdit = () => (activeCommit ? activeCommit() : true);
 export const hasPendingEdit = () => !!(activePending && activePending());
 export const forgetPendingEdit = () => { activeCommit = null; activePending = null; };
-export const changedLabels = (a, b) => changedIds(a, b).map((id) => SECTIONS.find((x) => x.id === id)?.label || id);
+export const changedLabels = (a, b) => changedIds(normData(a), normData(b)).map((id) => SECTIONS.find((x) => x.id === id)?.label || id);
 function timesBoard(r, onChange, others, onDraw) {
   const chips = h("div", { class: "tb__chips" });
   const count = h("small", { class: "tb__count" });
@@ -473,7 +475,7 @@ function historySection({ draft, replaceDraft, published }) {
     rows.forEach((r, i) => {
       // cada fila guarda cómo estaba la web antes de esa publicación: se compara con la versión que la reemplazó
       const newer = i === 0 ? published?.() : rows[i - 1].data;
-      const labs = newer ? changedIds(r.data, newer).map((id) => SECTIONS.find((x) => x.id === id)?.label || id) : [];
+      const labs = newer ? changedIds(normData(r.data), normData(newer)).map((id) => SECTIONS.find((x) => x.id === id)?.label || id) : [];
       if (!labs.length) return; // las publicaciones sin cambios de contenido no aportan nada
       shownRows++;
       box.append(h("div", { class: "item item--row" },
@@ -491,10 +493,10 @@ function historySection({ draft, replaceDraft, published }) {
 export const fmtDate = (d) => new Date(d).toLocaleString("es-AR", { dateStyle: "long", timeStyle: "short" });
 
 const nextIn = (nd) => { const x = nd.list[0]; if (!x || nd.tomorrow) return ""; const m = x.m - nowMin(); return m <= 0 ? " La próxima sale ahora." : m < 60 ? ` La próxima sale en ${m} min.` : ` La próxima sale en ${Math.floor(m / 60)} h ${m % 60} min.`; };
-function summarySection({ draft, goto, lastPublished }) {
+function summarySection({ draft, goto, lastPublished, published }) {
   const errs = validate(draft);
   const lost = draft.destinations.filter((d) => d.name?.trim() && !knownPlace(draft, d.name));
-  const nd = nextDepartures(draft.routes, 4);
+  const nd = nextDepartures((published ? normData(published()) : draft).routes, 4); // lo que ve el pasajero hoy: lo publicado
   const board = h("div", { class: "board" }, nd.list.length
     ? nd.list.map((x, i) => h("div", { class: "board__line" + (i === 0 ? " is-next" : "") },
       h("span", { class: "board__time" }, x.t, x.r.days?.[x.t] ? "*" : ""),

@@ -1,4 +1,4 @@
-import { h, group, field, toast, confirmBox, kb } from "./ui.js";
+import { h, group, field, toast, confirmBox, kb, icon, plainErr } from "./ui.js";
 import { uploadBlob, publicUrl, BUCKET_FRAMES, listFrameVersions, removeFrameVersion } from "./api.js";
 import { FRAMES_PROXY } from "../scripts/config.js";
 
@@ -27,7 +27,7 @@ function seek(video, t) {
 async function loadClip(file) {
   const url = URL.createObjectURL(file);
   const video = Object.assign(document.createElement("video"), { src: url, muted: true, playsInline: true, preload: "auto" });
-  await new Promise((res, rej) => { video.onloadedmetadata = res; video.onerror = () => rej(new Error(`No se pudo abrir "${file.name}". Probá con un MP4 (H.264).`)); });
+  await new Promise((res, rej) => { video.onloadedmetadata = res; video.onerror = () => rej(new Error(`No se pudo abrir "${file.name}". Probá con otro video (formato MP4).`)); });
   await seek(video, 0.2);
   const t = document.createElement("canvas"); t.width = 160; t.height = Math.round(160 * video.videoHeight / video.videoWidth);
   t.getContext("2d").drawImage(video, 0, 0, t.width, t.height);
@@ -35,10 +35,19 @@ async function loadClip(file) {
   return { file, url, video, dur: video.duration, w: video.videoWidth, h: video.videoHeight, thumb: t.toDataURL("image/jpeg", 0.7), title: "", detail: "", rail: "", name };
 }
 
+// El generador conserva su trabajo (videos, progreso, resultado) aunque se cambie de pantalla o se deshaga algo:
+// la pantalla se redibuja, pero este bloque es el mismo y solo se vuelve a conectar con el borrador actual.
+let KEEP = null;
+export const videoBusy = () => !!KEEP?.S.busy;
+export const videoHasWork = () => !!KEEP && (KEEP.S.busy || KEEP.S.clips.length > 0 || !!KEEP.S.result);
+
 export function heroVideoTool(ctx) {
-  const { draft, dirty, rerender } = ctx;
+  if (KEEP) { KEEP.ref.ctx = ctx; return KEEP.root; }
+  const ref = { ctx };
+  const D = () => ref.ctx.draft, dirty = () => ref.ctx.dirty(), rerender = () => ref.ctx.rerender();
   const S = { clips: [], fps: 10, fade: 0.6, mobileX: 0.56, busy: false, cancel: false, result: null };
   const root = h("div", {});
+  KEEP = { S, root, ref };
 
   const msg = h("p", { class: "status", role: "status", "aria-live": "polite" });
   const bar = h("div", { class: "bar", hidden: true }, h("i", {}));
@@ -53,22 +62,22 @@ export function heroVideoTool(ctx) {
 
   function drawClips(keepMsg) {
     clipsBox.replaceChildren();
-    if (!S.clips.length) clipsBox.append(h("p", { class: "empty" }, "Todavía no agregaste videos. Cada video es un tramo del viaje."));
+    if (!S.clips.length) clipsBox.append(h("p", { class: "empty" }, "Todavía no agregaste videos. Cada video es un paso del viaje."));
     S.clips.forEach((c, i) => {
       const move = (d) => { const j = i + d; if (j < 0 || j >= S.clips.length) return; [S.clips[i], S.clips[j]] = [S.clips[j], S.clips[i]]; drawClips(); };
       clipsBox.append(h("div", { class: "item" },
         h("div", { class: "item__bar" },
-          h("strong", {}, `Tramo ${i + 1} · ${c.name}`),
+          h("strong", {}, `Paso ${i + 1} · ${c.name}`),
           h("span", { class: "item__btns" },
-            h("button", { type: "button", class: "ico", disabled: i === 0 || S.busy, onclick: () => move(-1), "aria-label": "Subir" }, "↑"),
-            h("button", { type: "button", class: "ico", disabled: i === S.clips.length - 1 || S.busy, onclick: () => move(1), "aria-label": "Bajar" }, "↓"),
-            h("button", { type: "button", class: "ico ico--del", disabled: S.busy, "aria-label": "Quitar", onclick: () => { URL.revokeObjectURL(c.url); S.clips.splice(i, 1); drawClips(); } }, "✕"))),
+            h("button", { type: "button", class: "ico", disabled: i === 0 || S.busy, onclick: () => move(-1), "aria-label": `Subir el paso ${i + 1}` }, icon("up", 17)),
+            h("button", { type: "button", class: "ico", disabled: i === S.clips.length - 1 || S.busy, onclick: () => move(1), "aria-label": `Bajar el paso ${i + 1}` }, icon("down", 17)),
+            h("button", { type: "button", class: "ico ico--del", disabled: S.busy, "aria-label": `Quitar el paso ${i + 1}`, onclick: () => { URL.revokeObjectURL(c.url); S.clips.splice(i, 1); drawClips(); } }, icon("x", 17)))),
         h("div", { class: "split split--thumb" },
           h("div", { class: "clip__thumb" }, h("img", { src: c.thumb, alt: "" }), h("small", { class: "hint" }, `${fmtT(c.dur)} · ${c.w}×${c.h}`)),
           h("div", { class: "grid3" },
-            field({ label: "Título grande del tramo", value: c.title, placeholder: "Ej. Purmamarca", onInput: (v) => { c.title = v; } }),
+            field({ label: "Título grande del paso", value: c.title, placeholder: "Ej. Purmamarca", onInput: (v) => { c.title = v; } }),
             field({ label: "Detalle", value: c.detail, placeholder: "Ej. Cerro de los Siete Colores", onInput: (v) => { c.detail = v; } }),
-            field({ label: "Rótulo corto (barra inferior)", value: c.rail, placeholder: "Ej. Purmamarca", onInput: (v) => { c.rail = v; } })))));
+            field({ label: "Nombre corto (se ve abajo, en la barra del recorrido)", value: c.rail, placeholder: "Ej. Purmamarca", onInput: (v) => { c.rail = v; } })))));
     });
     const total = S.clips.reduce((a, c, i) => a + c.dur - (i ? S.fade : 0), 0);
     if (!keepMsg) say(S.clips.length ? `${S.clips.length} tramos · duración total del recorrido: ${fmtT(total)} · ${Math.floor(total * S.fps) + 1} cuadros por formato.` : "");
@@ -77,9 +86,9 @@ export function heroVideoTool(ctx) {
   fileIn.addEventListener("change", async () => {
     const files = [...fileIn.files]; fileIn.value = "";
     for (const f of files) {
-      if (S.clips.length >= 8) { toast("El máximo es 8 tramos.", "err"); break; }
+      if (S.clips.length >= 8) { toast("El máximo es 8 pasos.", "err"); break; }
       say(`Leyendo ${f.name}…`);
-      try { S.clips.push(await loadClip(f)); } catch (e) { toast(e.message, "err", 7000); }
+      try { S.clips.push(await loadClip(f)); } catch (e) { toast(plainErr(e), "err", 7000); }
     }
     drawClips();
   });
@@ -156,7 +165,7 @@ export function heroVideoTool(ctx) {
       showResult(thumbs);
     } catch (e) {
       if (e.message === "cancelado") say("Se canceló. No se cambió nada en la web.", "bad");
-      else { say("Falló: " + e.message, "bad"); toast(e.message, "err", 9000); }
+      else { say("No se pudo terminar: " + plainErr(e), "bad"); toast(plainErr(e), "err", 9000); }
     } finally {
       S.busy = false; genBtn.disabled = false; cancelBtn.hidden = true; drawClips(true); // no pisar el mensaje final
     }
@@ -168,8 +177,8 @@ export function heroVideoTool(ctx) {
       h("div", { class: "thumbs" }, Object.keys(thumbs).sort((a, b) => a - b).map((k) => h("img", { src: thumbs[k], alt: `Cuadro ${+k + 1}` }))),
       h("div", { class: "result__act" },
         h("button", { type: "button", class: "btn", onclick: () => {
-          draft.hero.frames = { base: r.base, count: r.count, cortes: r.cortes, patron: "f_%04d.webp", v: r.version };
-          draft.hero.poster = r.poster; draft.hero.posterMobile = r.posterMobile; draft.hero.etapas = r.etapas;
+          D().hero.frames = { base: r.base, count: r.count, cortes: r.cortes, patron: "f_%04d.webp", v: r.version };
+          D().hero.poster = r.poster; D().hero.posterMobile = r.posterMobile; D().hero.etapas = r.etapas;
           dirty(); toast("Video nuevo cargado en el editor. Tocá \"Guardar y publicar\" para que se vea en la web.", "ok", 8000); rerender();
         } }, "Usar este video"),
         h("small", { class: "hint" }, "Los cuadros ya están subidos pero la web no cambia hasta que guardes."))));
@@ -177,30 +186,30 @@ export function heroVideoTool(ctx) {
 
   const cleanBtn = h("button", { type: "button", class: "btn btn--ghost", onclick: async () => {
     try {
-      const keep = draft.hero.frames?.v; const all = await listFrameVersions(); const old = all.filter((v) => v !== keep && v !== S.result?.version);
+      const keep = D().hero.frames?.v; const all = await listFrameVersions(); const old = all.filter((v) => v !== keep && v !== S.result?.version);
       if (!old.length) return toast("No hay versiones anteriores para borrar.");
       if (!(await confirmBox(`Hay ${old.length} versiones anteriores del video guardadas. Se van a borrar para liberar espacio. La versión que está en la web no se toca. ¿Seguir?`, "Borrar"))) return;
       cleanBtn.disabled = true; for (const v of old) await removeFrameVersion(v);
       toast(`Se borraron ${old.length} versiones anteriores.`);
-    } catch (e) { toast(e.message, "err"); } finally { cleanBtn.disabled = false; }
+    } catch (e) { toast(plainErr(e), "err"); } finally { cleanBtn.disabled = false; }
   } }, "Borrar versiones anteriores");
 
   drawClips();
   root.append(group("Cambiar el video de la portada",
-    "La portada es un recorrido que avanza al scrollear. Para cambiarlo, subí los videos de cada tramo (en orden): el panel los une con un fundido y arma el recorrido completo.",
+    "La portada es un recorrido que avanza al deslizar. Para cambiarlo, subí un video por cada paso del viaje (en orden): el panel los une con una transición y arma el recorrido completo.",
     h("ul", { class: "tips" },
       h("li", {}, "Formato: MP4 horizontal (16:9), de 1280 px de ancho o más. Sin audio no hace falta."),
-      h("li", {}, "Entre 2 y 8 tramos de 5 a 12 segundos cada uno. Más largo = más pesado."),
+      h("li", {}, "Entre 2 y 8 pasos de 5 a 12 segundos cada uno. Más largo = más pesado."),
       h("li", {}, "Hacelo desde una computadora con Chrome o Edge y buena conexión: tarda varios minutos y sube unos 75 MB."),
       h("li", {}, "La web actual no se toca hasta que toques \"Guardar y publicar\".")),
     !CAN_WEBP && h("p", { class: "status is-bad" }, "Este navegador no puede crear las imágenes de la portada. Abrí el panel en Chrome o Edge."),
-    h("div", { class: "list__add" }, h("button", { type: "button", class: "btn btn--ghost", onclick: () => fileIn.click() }, "+ Agregar videos"), fileIn),
+    h("div", { class: "list__add" }, h("button", { type: "button", class: "btn btn--ghost", onclick: () => fileIn.click() }, icon("plus", 17), "Agregar videos"), fileIn),
     clipsBox,
     h("details", { class: "adv" }, h("summary", {}, "Opciones avanzadas"),
       h("div", { class: "grid3" },
-        field({ label: "Cuadros por segundo", type: "number", value: S.fps, hint: "10 recomendado. Más = más suave y más pesado.", onInput: (v) => { S.fps = Math.min(15, Math.max(6, +v || 10)); drawClips(); } }),
-        field({ label: "Fundido entre tramos (segundos)", type: "number", value: S.fade, hint: "0,6 recomendado.", onInput: (v) => { S.fade = Math.min(2, Math.max(0.2, +v || 0.6)); drawClips(); } }),
-        field({ label: "Encuadre en celular (0 izquierda – 1 derecha)", type: "number", value: S.mobileX, hint: "Qué parte del video se ve en el celular. 0,56 centra un poco a la derecha.", onInput: (v) => { S.mobileX = Math.min(1, Math.max(0, +v || 0.56)); } }))),
+        field({ label: "Suavidad del movimiento", help: "Cuántas imágenes por segundo tiene el recorrido. Más suave pesa más y tarda más en cargar.", type: "number", value: S.fps, hint: "10 es lo recomendado (entre 6 y 15).", onInput: (v) => { S.fps = Math.min(15, Math.max(6, +v || 10)); drawClips(); } }),
+        field({ label: "Transición entre videos (segundos)", help: "Cuánto tardan en mezclarse un paso con el siguiente.", type: "number", value: S.fade, hint: "0,6 es lo recomendado.", onInput: (v) => { S.fade = Math.min(2, Math.max(0.2, +v || 0.6)); drawClips(); } }),
+        field({ label: "Parte del video que se ve en el celular", help: "El celular muestra un cuadrado del video. 0 es el borde izquierdo y 1 el derecho.", type: "number", value: S.mobileX, hint: "0 = izquierda, 1 = derecha. 0,56 centra un poco a la derecha.", onInput: (v) => { S.mobileX = Math.min(1, Math.max(0, +v || 0.56)); } }))),
     bar, msg,
     h("div", { class: "list__add" }, genBtn, cancelBtn, cleanBtn),
     resultBox));

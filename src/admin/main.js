@@ -1,5 +1,6 @@
 import { configured, getSession, signIn, signOut, isAdmin, fetchRemote, withDefaults, saveContent, listHistory } from "./api.js";
 import { h, toast, confirmBox, icon, plainErr, hooks, undoToast } from "./ui.js";
+import { videoBusy, videoHasWork } from "./hero-video.js";
 import { SECTIONS, KEY2SEC, validate, strip, fmtDate, fmtShort, nextDepartures, commitPendingEdit, hasPendingEdit, forgetPendingEdit, changedLabels } from "./sections.js";
 
 const app = document.getElementById("app");
@@ -11,6 +12,7 @@ const store = {
   del: (k) => { try { localStorage.removeItem(k); } catch { /* sin almacenamiento */ } },
 };
 const DRAFT_KEY = "pm-admin-draft";
+const clearDraft = () => { store.del(DRAFT_KEY); store.del(DRAFT_KEY + "-next"); }; // borra el borrador y lo que se guardó aparte mientras había un aviso abierto
 // la base devuelve "…+00:00" y el panel guarda "…Z": son el mismo instante con distinto texto
 const same = (a, b) => !!a && !!b && +new Date(a) === +new Date(b);
 
@@ -18,7 +20,7 @@ let user = null, draft = null, remoteData = null, lastPub = null, lastPubRaw = n
 let saveBtn, discardBtn, statusEl, topEl, sideEl, navEl, goto, redraw, stashTimer, paintTimer, histTimer, baseJson = {};
 let bannerOpen = false; // hay un borrador pendiente esperando que elijas "Recuperar" o "Descartar"
 let stashedOk = false, stashFailed = false, otherBar, otherSeen = null;
-let undoBtn, redoBtn, errBar, showErrBar = true, histRestored = false; // la barra de errores se muestra siempre que falte algo
+let undoBtn, redoBtn, errBar, showErrBar = false, histRestored = false; // la barra de errores aparece cuando intentás publicar con algo faltante
 
 /* historial de cambios del borrador: deshacer y rehacer de todo, no solo de lo que se quita */
 let hist = [], hi = -1;
@@ -46,7 +48,7 @@ const histGo = (d) => {
   if (ids.length && !ids.includes(current)) { current = ids[0]; store.set("pm-admin-section", current); } // si lo deshecho está en otra pantalla, se va ahí
   document.querySelectorAll(".toast").forEach((t) => t.remove()); // los "Deshacer" de los avisos quedan viejos: no deshacer de más
   hi = j; draft = withDefaults(JSON.parse(hist[hi])); isDirty = changedSections().size > 0;
-  clearTimeout(stashTimer); if (isDirty) stashDraft(); else store.del(DRAFT_KEY);
+  clearTimeout(stashTimer); if (isDirty) stashDraft(); else clearDraft();
   const fields = () => [...document.querySelectorAll(".main input, .main textarea")];
   const at = fields().indexOf(document.activeElement); // en cuál campo estaba el cursor
   redraw(); paintStatus(); paintUndo(); histSave();
@@ -153,7 +155,10 @@ function deniedScreen(email) {
 }
 
 /* ---------- panel ---------- */
-const stashDraft = () => (user && draft ? store.set(DRAFT_KEY, JSON.stringify({ at: Date.now(), user: user.id, base: lastPubRaw, data: strip(draft) })) : false);
+const normal = (d) => strip(withDefaults(structuredClone(d ?? {})));
+const myChanges = () => { const d = strip(draft); return Object.fromEntries(Object.keys(KEY2SEC).filter((k) => JSON.stringify(d[k]) !== baseJson[k]).map((k) => [k, d[k]])); };
+// mientras el aviso "Recuperar" está abierto, lo nuevo se guarda aparte para no pisar el borrador viejo
+const stashDraft = () => (user && draft ? store.set(bannerOpen ? DRAFT_KEY + "-next" : DRAFT_KEY, JSON.stringify({ at: Date.now(), user: user.id, base: lastPubRaw, changes: myChanges(), data: strip(draft) })) : false);
 const setDirty = () => {
   if (!isDirty) { isDirty = true; paintStatus(); }
   stashedOk = false; clearTimeout(stashTimer); stashTimer = setTimeout(() => { stashedOk = stashDraft(); stashFailed = !stashedOk; paintStatus(); }, 700); // borrador automático en este navegador
@@ -175,13 +180,16 @@ function paintErrBar() {
 function paintStatus() {
   if (!statusEl) return;
   isDirty = changedSections().size > 0; // siempre contra lo publicado: escribir y volver a como estaba no es un cambio
-  if (!isDirty && !bannerOpen) { clearTimeout(stashTimer); store.del(DRAFT_KEY); }
+  if (!isDirty && !bannerOpen) { clearTimeout(stashTimer); clearDraft(); }
   const ch = isDirty ? [...changedSections()] : [];
   statusEl.title = ch.map(sectionLabel).join(", ");
-  statusEl.textContent = isDirty ? (ch.length > 1 ? `Hay cambios sin publicar en ${ch.length} pantallas` : ch.length ? `Hay cambios sin publicar en ${sectionLabel(ch[0])}` : "Hay cambios sin publicar") : lastPub ? `Publicado ${ago(lastPub)}` : "Todo publicado";
-  if (isDirty && stashedOk) statusEl.append(h("small", { class: "state__saved", "aria-hidden": "true" }, "Cambios guardados en este navegador"));
-  else if (isDirty && stashFailed) statusEl.append(h("small", { class: "state__saved state__saved--bad" }, "No se pudieron guardar en este navegador: publicá cuanto antes"));
-  if (!isDirty && hasPendingEdit()) statusEl.append(h("small", { class: "state__saved" }, "Hora sin confirmar"));
+  const head = isDirty ? (ch.length > 1 ? `Hay cambios sin publicar en ${ch.length} pantallas` : ch.length ? `Hay cambios sin publicar en ${sectionLabel(ch[0])}` : "Hay cambios sin publicar") : lastPub ? `Publicado ${ago(lastPub)}` : "Todo publicado";
+  const sub = isDirty ? (stashedOk ? "Cambios guardados en este navegador" : stashFailed ? "No se pudieron guardar en este navegador: publicá cuanto antes" : "Guardando en este navegador…") : hasPendingEdit() ? "Hora sin confirmar" : "Sin cambios pendientes";
+  const sig = head + "|" + sub + "|" + isDirty;
+  if (statusEl.dataset.sig !== sig) { // solo se toca el DOM si cambió: un lector de pantalla no repite lo mismo
+    statusEl.dataset.sig = sig;
+    statusEl.replaceChildren(h("span", { class: "state__t" }, head), h("small", { class: "state__saved" + (isDirty && stashFailed && !stashedOk ? " state__saved--bad" : "") }, sub));
+  }
   statusEl.className = "state " + (isDirty ? "is-dirty" : "is-ok");
   saveBtn.disabled = !(isDirty || hasPendingEdit());
   saveBtn.title = isDirty ? "Guardar y publicar (Ctrl+S)" : "No hay cambios para publicar";
@@ -209,12 +217,17 @@ async function publish() {
     try { at = await saveContent(strip(draft), user.id, lastPubRaw); } // la base solo escribe si nadie publicó desde que cargaste
     catch (e) {
       if (e.code !== "CONFLICT") throw e;
-      let detail = "";
-      try { const cur = await limit(fetchRemote()); const labs = changedLabels(remoteData, cur?.data); detail = ` (${fmtShort(cur.updated_at)}${labs.length ? ": cambió " + labs.join(", ") : ""})`; } catch { /* sin detalle */ }
-      if (!(await confirmBox(`Otra persona publicó cambios mientras editabas${detail}. Si publicás ahora, los reemplazás. ¿Publicar igual?`, "Publicar igual", "Cancelar", { focusCancel: true }))) { toast("No se publicó nada. Tu borrador sigue acá.", "ok", 8000, { label: "Actualizar y ver lo nuevo", icon: "redo", run: () => { stashDraft(); location.reload(); } }); return; }
-      at = await saveContent(strip(draft), user.id, null);
+      // lo de la otra persona se conserva y se le suma lo tuyo (si tocaron la misma pantalla, queda lo tuyo)
+      const cur = await limit(fetchRemote());
+      const theirs = changedLabels(remoteData, cur?.data), mine = [...changedSections()].map(sectionLabel), clash = theirs.filter((l) => mine.includes(l));
+      const joinMsg = `Otra persona publicó cambios mientras editabas (${fmtShort(cur.updated_at)}${theirs.length ? ": " + theirs.join(", ") : ""}). Se pueden juntar los dos: queda lo de ella y se suma lo tuyo (${mine.join(", ") || "nada"}).${clash.length ? ` En ${clash.join(", ")} cambiaron los dos: queda lo tuyo.` : ""}`;
+      if (!(await confirmBox(joinMsg, "Juntar y publicar", "Cancelar", { focusCancel: true }))) { toast("No se publicó nada. Tu borrador sigue acá.", "ok", 8000, { label: "Actualizar y ver lo nuevo", icon: "redo", run: () => { stashDraft(); location.reload(); } }); return; }
+      const merged = normal(cur.data); const mineNow = strip(draft);
+      for (const k of Object.keys(KEY2SEC)) if (JSON.stringify(mineNow[k]) !== baseJson[k]) merged[k] = mineNow[k];
+      at = await saveContent(merged, user.id, cur.updated_at); // otra vez condicional: si hubo una tercera persona, avisa
+      draft = withDefaults(structuredClone(merged)); redraw();
     }
-    remoteData = strip(draft); lastPub = new Date(at); lastPubRaw = at; computeBase(); histSave(); store.del(DRAFT_KEY); clearTimeout(stashTimer);
+    remoteData = strip(draft); lastPub = new Date(at); lastPubRaw = at; if (otherBar) { otherBar.hidden = true; otherSeen = null; } computeBase(); histSave(); clearDraft(); clearTimeout(stashTimer);
     isDirty = false; paintStatus();
     toast("Publicado. La web ya muestra los cambios.", "ok", 9000, { label: "Volver a la anterior", run: async () => {
       try { const rows = await listHistory(); if (!rows[0]) return toast("No hay una versión anterior guardada."); draft = withDefaults(rows[0].data); setDirty(); histPush(); redraw(); paintStatus(); toast("Cargaste la versión anterior. Tocá Guardar y publicar para que vuelva a verse en la web."); }
@@ -285,7 +298,7 @@ function palette() {
 }
 
 function shell(pending) {
-  const main = h("main", { class: "main" });
+  const main = h("main", { class: "main", id: "main", tabindex: "-1" });
   navEl = h("nav", { class: "side__nav", "aria-label": "Secciones" });
   const ctx = {
     dirty: setDirty,
@@ -303,13 +316,15 @@ function shell(pending) {
     const y = scrollY;
     main.replaceChildren(
       h("div", { class: "head" },
-        h("div", {}, h("h2", { class: "title", tabindex: "-1" }, sec.label), sec.desc && h("p", { class: "title__desc" }, sec.desc)),
+        h("div", {}, h("h1", { class: "title", tabindex: "-1" }, sec.label), sec.desc && h("p", { class: "title__desc" }, sec.desc)),
         h("button", { type: "button", class: "btn btn--ghost btn--sm", onclick: () => help(sec) }, icon("preguntas", 17), "¿Cómo se hace?")),
       sec.render({ ...ctx, draft }));
     scrollTo(0, y);
   };
 
   redraw = draw;
+  { const hid = location.hash.replace(/^#\//, ""); if (SECTIONS.some((s) => s.id === hid)) current = hid; } // un enlace #/horarios abre esa pantalla
+  addEventListener("popstate", () => { const hid = location.hash.replace(/^#\//, ""); if (SECTIONS.some((s) => s.id === hid) && hid !== current) { current = hid; store.set("pm-admin-section", hid); draw(); } });
   // lleva al cliente al campo exacto con el problema, lo marca y lo resalta un momento
   const focusTarget = ({ item, list, field, msg }) => {
     let scope = main;
@@ -323,7 +338,7 @@ function shell(pending) {
         box.classList.add("is-bad");
         let e = box.querySelector(".err"); if (!e) { e = h("small", { class: "err", role: "alert" }); box.append(e); }
         const m = (msg || "").split(": ").slice(1).join(": ") || msg || "Revisá este dato."; e.textContent = m.charAt(0).toUpperCase() + m.slice(1);
-        box.querySelector("input,textarea")?.focus({ preventScroll: true });
+        const inp = box.querySelector("input,textarea"); inp?.focus({ preventScroll: true }); inp?.setAttribute("aria-invalid", "true");
         box.addEventListener("input", () => { box.classList.remove("is-bad"); e.textContent = ""; }, { once: true });
       }
     }
@@ -331,7 +346,7 @@ function shell(pending) {
     target.classList.add("is-flash"); setTimeout(() => target.classList.remove("is-flash"), 2400);
   };
   goto = (id, t) => {
-    current = id; store.set("pm-admin-section", id); draw(); sideEl?.classList.remove("is-open"); sideEl?.querySelector(".side__toggle")?.setAttribute("aria-expanded", "false");
+    current = id; store.set("pm-admin-section", id); if (location.hash !== `#/${id}`) history.pushState(null, "", `#/${id}`); draw(); sideEl?.classList.remove("is-open"); sideEl?.querySelector(".side__toggle")?.setAttribute("aria-expanded", "false");
     if (t && (t.item != null || t.field)) requestAnimationFrame(() => focusTarget(t)); else { scrollTo(0, 0); main.querySelector(".title")?.focus({ preventScroll: true }); } // quien usa lector de pantalla oye la pantalla nueva
   };
 
@@ -346,17 +361,17 @@ function shell(pending) {
   discardBtn = h("button", { class: "btn btn--ghost btn--discard", type: "button", hidden: true, title: "Descartar los cambios sin publicar", "aria-label": "Descartar cambios", onclick: () => {
     // sin pregunta: se descarta y queda a mano "Deshacer"
     undoToast("Descartaste los cambios sin publicar.", () => {
-      draft = withDefaults(structuredClone(remoteData)); isDirty = false; clearTimeout(stashTimer); store.del(DRAFT_KEY); clearTimeout(histTimer); histPush(); paintStatus(); draw();
+      draft = withDefaults(structuredClone(remoteData)); isDirty = false; clearTimeout(stashTimer); clearDraft(); clearTimeout(histTimer); histPush(); paintStatus(); draw();
     });
   } }, icon("trash", 17), h("span", { class: "lbl-txt" }, "Descartar cambios"));
 
   // borrador de una sesión anterior que no se llegó a publicar
   bannerOpen = !!pending;
   const recover = pending && h("div", { class: "recover", role: "alert" },
-    h("span", {}, pending.stale ? `Tenés un borrador del ${fmtDate(pending.at)}, pero otra persona publicó después. Si lo recuperás, puede reemplazar cambios más nuevos.` : `Tenés cambios sin publicar del ${fmtDate(pending.at)}, guardados en este navegador.`),
+    h("span", {}, pending.stale ? `Tenés un borrador del ${fmtDate(pending.at)}, pero otra persona publicó después. Si lo recuperás, se suma a lo nuevo: en lo que cambiaste vos queda lo tuyo.` : `Tenés cambios sin publicar del ${fmtDate(pending.at)}, guardados en este navegador.`),
     h("span", { class: "recover__act" },
-      h("button", { type: "button", class: "btn btn--ghost", onclick: () => { bannerOpen = false; store.del(DRAFT_KEY); histReset(); recover.remove(); } }, "Descartarlos"),
-      h("button", { type: "button", class: "btn", onclick: () => { bannerOpen = false; draft = withDefaults(pending.data); setDirty(); recover.remove(); draw(); } }, pending.stale ? "Recuperar igual" : "Recuperarlos")));
+      h("button", { type: "button", class: "btn btn--ghost", onclick: () => { bannerOpen = false; store.del(DRAFT_KEY); const nx = store.get(DRAFT_KEY + "-next"); if (nx) { store.set(DRAFT_KEY, nx); store.del(DRAFT_KEY + "-next"); } histReset(); recover.remove(); } }, "Descartarlos"),
+      h("button", { type: "button", class: "btn", onclick: () => { bannerOpen = false; store.del(DRAFT_KEY + "-next"); draft = withDefaults(pending.stale && pending.changes ? { ...normal(remoteData), ...pending.changes } : pending.data); setDirty(); recover.remove(); draw(); } }, pending.stale ? "Recuperar igual" : "Recuperarlos")));
   // (el historial arranca en lo publicado; al recuperar, el borrador entra como un cambio más)
 
   undoBtn = h("button", { type: "button", class: "ico ico--top", title: "Deshacer (Ctrl+Z)", "aria-label": "Deshacer", disabled: true, onclick: () => histGo(-1) }, icon("undo", 18));
@@ -367,7 +382,7 @@ function shell(pending) {
   topEl = h("header", { class: "top" }, h("div", { class: "busybar", "aria-hidden": "true" }), statusEl, h("span", { class: "top__undo" }, undoBtn, redoBtn), discardBtn, saveBtn);
   sideEl = h("aside", { class: "side" }, h("div", { class: "livery", "aria-hidden": "true" }),
     h("div", { class: "side__bar" }, brand(),
-      h("button", { type: "button", class: "side__toggle", "aria-label": "Abrir el menú", "aria-expanded": "false", onclick: (e) => { const o = sideEl.classList.toggle("is-open"); e.currentTarget.setAttribute("aria-expanded", String(o)); } }, icon("menu", 22))),
+      h("button", { type: "button", class: "side__toggle", "aria-label": "Abrir el menú", "aria-expanded": "false", onclick: (e) => { const o = sideEl.classList.toggle("is-open"); e.currentTarget.setAttribute("aria-expanded", String(o)); } }, icon("menu", 22), h("span", { class: "side__toggle__t" }, "Menú"))),
     h("div", { class: "side__body" },
       h("button", { type: "button", class: "side__search", title: "Buscar una pantalla, un servicio o una ayuda (Ctrl+K)", onclick: palette }, icon("search", 17), h("span", {}, "Ir a…"), h("kbd", {}, "Ctrl K")),
       navEl,
@@ -378,7 +393,7 @@ function shell(pending) {
           if (isDirty) stashDraft();
           isDirty = false; await signOut(); await boot();
         } }, icon("logout", 17), "Cerrar sesión"))));
-  app.replaceChildren(h("div", { class: "layout" }, sideEl, h("div", { class: "content" }, topEl, netBar, otherBar, errBar, recover || null, main)));
+  app.replaceChildren(h("div", { class: "layout" }, h("a", { class: "skip", href: "#main" }, "Saltar al contenido"), sideEl, h("div", { class: "content" }, topEl, netBar, otherBar, errBar, recover || null, main)));
   if (!histRestored) histReset();
   histRestored = false; draw(); paintStatus(); paintUndo(); welcome();
 }
@@ -399,8 +414,10 @@ async function boot() {
     draft = withDefaults(structuredClone(remoteData)); isDirty = false; // copia: editar el borrador no debe tocar lo publicado
     computeBase();
     let pending = null;
+    // si el aviso "Recuperar" quedó sin resolver y después se editó, lo nuevo estaba guardado aparte: se rescata
+    if (!store.get(DRAFT_KEY) && store.get(DRAFT_KEY + "-next")) { store.set(DRAFT_KEY, store.get(DRAFT_KEY + "-next")); store.del(DRAFT_KEY + "-next"); }
     try { pending = JSON.parse(store.get(DRAFT_KEY) || "null"); } catch { pending = null; }
-    if (!pending || pending.user !== user.id || JSON.stringify(pending.data) === JSON.stringify(strip(draft))) { if (pending) store.del(DRAFT_KEY); pending = null; }
+    if (!pending || pending.user !== user.id || JSON.stringify(pending.data) === JSON.stringify(strip(draft))) { if (pending) clearDraft(); pending = null; }
     if (pending) pending.stale = !!(pending.base && lastPubRaw && !same(pending.base, lastPubRaw)); // otra persona publicó después de ese borrador
     // si había un historial guardado de esta misma versión, se recupera (deshacer sigue funcionando tras recargar)
     histRestored = false;
@@ -431,18 +448,18 @@ addEventListener("keydown", (e) => {
 setInterval(() => { if (statusEl?.isConnected && !isDirty) paintStatus(); }, 30000);
 // si otra persona publica mientras tenés el panel abierto, se avisa (se consulta cada minuto)
 setInterval(async () => {
-  if (!statusEl?.isConnected || !lastPubRaw || navigator.onLine === false) return;
+  if (!statusEl?.isConnected || !lastPubRaw || navigator.onLine === false || document.hidden) return;
   try {
     const cur = await limit(fetchRemote());
     if (cur?.updated_at && !same(cur.updated_at, lastPubRaw) && !same(cur.updated_at, otherSeen)) {
       otherSeen = cur.updated_at; const labs = changedLabels(remoteData, cur.data);
       otherBar.hidden = false;
-      otherBar.replaceChildren(h("span", {}, `Otra persona publicó cambios (${fmtShort(cur.updated_at)}${labs.length ? ": " + labs.join(", ") : ""}). Tu borrador sigue acá y se guarda.`),
+      otherBar.replaceChildren(h("span", {}, `Otra persona publicó cambios (${fmtShort(cur.updated_at)}${labs.length ? ": " + labs.join(", ") : ""}). ${isDirty ? "Tus cambios siguen acá y se guardan." : ""}`),
         h("button", { type: "button", class: "link", onclick: () => { stashDraft(); location.reload(); } }, "Actualizar y ver lo nuevo"));
     }
   } catch { /* sin conexión: se vuelve a intentar */ }
 }, 60000);
 addEventListener("online", () => { if (netBar) netBar.hidden = true; if (document.body.dataset.retry) boot(); });
 addEventListener("offline", () => { if (netBar) netBar.hidden = false; });
-addEventListener("beforeunload", (e) => { if (isDirty) { stashDraft(); e.preventDefault(); e.returnValue = ""; } });
+addEventListener("beforeunload", (e) => { if (isDirty || videoBusy()) { stashDraft(); e.preventDefault(); e.returnValue = ""; } });
 boot();

@@ -17,7 +17,7 @@ export function h(tag, attrs, ...kids) {
 // los errores de red se explican en llano (nunca "TypeError: Failed to fetch")
 // Si no se reconoce el error, nunca se le muestra al dueño el texto crudo de la base (queda en la consola)
 const GENERIC = "Algo salió mal. Tus cambios siguen acá: probá de nuevo o avisale a quien administra la web.";
-export const plainErr = (e) => { const m = plainErr0(e); if (m === String(e?.message || e) && /^No se pudo (guardar|leer)|violates|duplicate|syntax|relation|column|PGRST|JWT/i.test(m)) { console.warn("[panel]", m); return GENERIC; } return m; };
+export const plainErr = (e) => { const m = plainErr0(e); if (m === String(e?.message || e) && /^No se pudo (guardar|leer|comprobar|subir|borrar|listar)|violates|duplicate|syntax|relation|column|PGRST|JWT/i.test(m)) { console.warn("[panel]", m); return GENERIC; } return m; };
 const plainErr0 = (e) => (/fetch|network|conexi|tard|abort|load failed|offline/i.test(String(e?.message || e)) ? "No hay conexión con la base de datos. Revisá tu internet y probá de nuevo." : /row-level security|permission denied|42501/i.test(String(e?.message || e)) ? "Tu cuenta no tiene permiso para guardar. Pedile acceso a quien administra la web." : /jwt|session|expired/i.test(String(e?.message || e)) ? "Tu sesión venció. Volvé a entrar: tus cambios quedan guardados en este navegador." : /rate limit|too many/i.test(String(e?.message || e)) ? "Hiciste muchos intentos seguidos. Esperá unos minutos y probá de nuevo." : /not confirmed/i.test(String(e?.message || e)) ? "Esa cuenta todavía no confirmó su email." : String(e?.message || e));
 
 // ---------- iconos (un solo trazo, mismo grosor) ----------
@@ -74,7 +74,9 @@ export function toast(msg, kind = "ok", ms = 3200, action) {
   const t = h("div", { class: `toast toast--${kind}`, title: "Tocá para cerrar", onclick: () => close() }, h("span", {}, msg),
     action && h("button", { type: "button", class: "toast__act", onclick: (e) => { e.stopPropagation(); action.run(); close(); } }, icon(action.icon || "undo", 15), action.label));
   toastBox.append(t);
-  setTimeout(close, action ? Math.max(ms, 8000) : ms);
+  const dur = action ? Math.max(ms, 8000) : ms; let timer = setTimeout(close, dur);
+  const hold = () => clearTimeout(timer), rest = () => { clearTimeout(timer); timer = setTimeout(close, 3000); };
+  t.addEventListener("mouseenter", hold); t.addEventListener("focusin", hold); t.addEventListener("mouseleave", rest); t.addEventListener("focusout", rest);
 }
 export function confirmBox(msg, okLabel = "Aceptar", cancelLabel = "Cancelar", opts = {}) {
   return new Promise((res) => {
@@ -219,7 +221,7 @@ export function imageField({ label, url, onChange, maxWidth = 1600, hint }) {
       const r = await uploadImage(f, { maxWidth });
       set(r.url); onChange(r.url);
       info.textContent = `Listo · se optimizó de ${kb(r.before)} a ${kb(r.after)} (${r.width}×${r.height}).`;
-    } catch (e) { toast(plainErr(e), "err", 7000); }
+    } catch (e) { toast(plainErr(e), "err", 9000, { label: "Reintentar", icon: "redo", run: () => { const dt = new DataTransfer(); dt.items.add(f); file.files = dt.files; file.dispatchEvent(new Event("change")); } }); }
     finally { btn.disabled = false; btn.textContent = old; file.value = ""; wrap.classList.remove("is-busy"); }
   });
   const btn = h("button", { type: "button", class: "btn btn--ghost", onclick: () => file.click() }, url ? "Cambiar imagen" : "Elegir imagen");
