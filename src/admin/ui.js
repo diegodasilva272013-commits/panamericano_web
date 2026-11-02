@@ -15,7 +15,10 @@ export function h(tag, attrs, ...kids) {
 }
 
 // los errores de red se explican en llano (nunca "TypeError: Failed to fetch")
-export const plainErr = (e) => (/fetch|network|conexi|tard|abort|load failed|offline/i.test(String(e?.message || e)) ? "No hay conexión con la base de datos. Revisá tu internet y probá de nuevo." : /row-level security|permission denied|42501/i.test(String(e?.message || e)) ? "Tu cuenta no tiene permiso para guardar. Pedile acceso a quien administra la web." : /jwt|session|expired/i.test(String(e?.message || e)) ? "Tu sesión venció. Volvé a entrar: tus cambios quedan guardados en este navegador." : /rate limit|too many/i.test(String(e?.message || e)) ? "Hiciste muchos intentos seguidos. Esperá unos minutos y probá de nuevo." : /not confirmed/i.test(String(e?.message || e)) ? "Esa cuenta todavía no confirmó su email." : String(e?.message || e));
+// Si no se reconoce el error, nunca se le muestra al dueño el texto crudo de la base (queda en la consola)
+const GENERIC = "Algo salió mal. Tus cambios siguen acá: probá de nuevo o avisale a quien administra la web.";
+export const plainErr = (e) => { const m = plainErr0(e); if (m === String(e?.message || e) && /^No se pudo (guardar|leer)|violates|duplicate|syntax|relation|column|PGRST|JWT/i.test(m)) { console.warn("[panel]", m); return GENERIC; } return m; };
+const plainErr0 = (e) => (/fetch|network|conexi|tard|abort|load failed|offline/i.test(String(e?.message || e)) ? "No hay conexión con la base de datos. Revisá tu internet y probá de nuevo." : /row-level security|permission denied|42501/i.test(String(e?.message || e)) ? "Tu cuenta no tiene permiso para guardar. Pedile acceso a quien administra la web." : /jwt|session|expired/i.test(String(e?.message || e)) ? "Tu sesión venció. Volvé a entrar: tus cambios quedan guardados en este navegador." : /rate limit|too many/i.test(String(e?.message || e)) ? "Hiciste muchos intentos seguidos. Esperá unos minutos y probá de nuevo." : /not confirmed/i.test(String(e?.message || e)) ? "Esa cuenta todavía no confirmó su email." : String(e?.message || e));
 
 // ---------- iconos (un solo trazo, mismo grosor) ----------
 const ICONS = {
@@ -23,6 +26,7 @@ const ICONS = {
   textos: '<path d="M5 7V5.5h14V7M12 5.5v13M9 18.5h6"/>',
   horarios: '<circle cx="6" cy="6" r="2.2"/><circle cx="18" cy="18" r="2.2"/><path d="M8.2 6H13a3 3 0 0 1 0 6h-2a3 3 0 0 0 0 6h4.8"/>',
   menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
+  trash: '<path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12M10 11v5M14 11v5"/>',
   search: '<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/>',
   undo: '<path d="M9 14 4 9l5-5M4 9h9a6 6 0 0 1 0 12h-3"/>',
   redo: '<path d="m15 14 5-5-5-5M20 9h-9a6 6 0 0 0 0 12h3"/>',
@@ -72,7 +76,7 @@ export function toast(msg, kind = "ok", ms = 3200, action) {
   toastBox.append(t);
   setTimeout(close, action ? Math.max(ms, 8000) : ms);
 }
-export function confirmBox(msg, okLabel = "Aceptar", cancelLabel = "Cancelar") {
+export function confirmBox(msg, okLabel = "Aceptar", cancelLabel = "Cancelar", opts = {}) {
   return new Promise((res) => {
     const back = document.activeElement;
     const done = (v) => { document.removeEventListener("keydown", key, true); ov.remove(); back?.focus?.(); res(v); };
@@ -92,7 +96,7 @@ export function confirmBox(msg, okLabel = "Aceptar", cancelLabel = "Cancelar") {
         h("div", { class: "modal__msg" }, msg),
         h("div", { class: "modal__act" }, cancel, h("button", { class: "btn", type: "button", onclick: () => done(true) }, okLabel))));
     document.addEventListener("keydown", key, true);
-    document.body.append(ov); ov.querySelector(".btn:last-child").focus();
+    document.body.append(ov); (opts.focusCancel && cancel ? cancel : ov.querySelector(".btn:last-child")).focus();
   });
 }
 
@@ -210,13 +214,13 @@ export function imageField({ label, url, onChange, maxWidth = 1600, hint }) {
   const file = h("input", { type: "file", accept: "image/*", hidden: true });
   file.addEventListener("change", async () => {
     const f = file.files[0]; if (!f) return;
-    btn.disabled = true; const old = btn.textContent; btn.textContent = "Subiendo…";
+    btn.disabled = true; const old = btn.textContent; btn.textContent = "Subiendo…"; wrap.classList.add("is-busy"); info.textContent = "Achicando la foto y subiéndola…";
     try {
       const r = await uploadImage(f, { maxWidth });
       set(r.url); onChange(r.url);
       info.textContent = `Listo · se optimizó de ${kb(r.before)} a ${kb(r.after)} (${r.width}×${r.height}).`;
     } catch (e) { toast(plainErr(e), "err", 7000); }
-    finally { btn.disabled = false; btn.textContent = old; file.value = ""; }
+    finally { btn.disabled = false; btn.textContent = old; file.value = ""; wrap.classList.remove("is-busy"); }
   });
   const btn = h("button", { type: "button", class: "btn btn--ghost", onclick: () => file.click() }, url ? "Cambiar imagen" : "Elegir imagen");
   // la foto va con marco de boleto: borde fino y la franja del bus abajo
@@ -224,5 +228,6 @@ export function imageField({ label, url, onChange, maxWidth = 1600, hint }) {
   ticket.hidden = !url;
   const baseSet = set;
   set = (u) => { baseSet(u); ticket.hidden = !u; };
-  return h("div", { class: "imgf" }, label && h("span", { class: "imgf__label" }, label), h("div", { class: "imgf__row" }, ticket, h("div", {}, btn, file, info)));
+  const wrap = h("div", { class: "imgf" }, label && h("span", { class: "imgf__label" }, label), h("div", { class: "imgf__row" }, ticket, h("div", {}, btn, file, h("div", { class: "imgf__busy", "aria-hidden": "true" }), info)));
+  return wrap;
 }

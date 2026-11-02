@@ -1,4 +1,4 @@
-import { h, field, check, group, groupAside, listEditor, imageField, confirmBox, toast, icon, undoToast } from "./ui.js";
+import { h, field, check, group, groupAside, listEditor, imageField, confirmBox, toast, icon, undoToast, hooks } from "./ui.js";
 import { listHistory } from "./api.js";
 import { heroVideoTool } from "./hero-video.js";
 
@@ -208,8 +208,10 @@ const readTime = (s) => { const m = String(s).trim().match(/^(\d{1,2})[:.]?(\d{2
 // Horas como fichas sobre el tablero oscuro. Tocar una abre una ventanita pegada a ella (sin mover las demás).
 // la ventanita de hora que esté abierta (para confirmarla antes de publicar)
 let activeCommit = null;
+let activePending = null;
 export const commitPendingEdit = () => (activeCommit ? activeCommit() : true);
-export const forgetPendingEdit = () => { activeCommit = null; };
+export const hasPendingEdit = () => !!(activePending && activePending());
+export const forgetPendingEdit = () => { activeCommit = null; activePending = null; };
 export const changedLabels = (a, b) => changedIds(a, b).map((id) => SECTIONS.find((x) => x.id === id)?.label || id);
 function timesBoard(r, onChange, others, onDraw) {
   const chips = h("div", { class: "tb__chips" });
@@ -244,6 +246,8 @@ function timesBoard(r, onChange, others, onDraw) {
       return true;
     };
     commitOpen = done; activeCommit = done;
+    activePending = () => tIn.value.trim() !== t || dIn.value.replace(/[()]/g, "").trim() !== (r.days?.[t] || "");
+    [tIn, dIn].forEach((x) => x.addEventListener("input", () => hooks.repaint?.()));
     const drop = () => undoable(`Quitaste la salida de las ${t}.`, () => { const days = { ...(r.days || {}) }; delete days[t]; setDays(r, days); r.times.splice(i, 1); open = -1; changed(); });
     const keys = (e) => { if (e.key === "Enter") { e.preventDefault(); done(); } else if (e.key === "Escape") { e.stopPropagation(); open = -1; refocus = t; draw(); } };
     [tIn, dIn].forEach((x) => x.addEventListener("keydown", keys));
@@ -294,7 +298,7 @@ function timesBoard(r, onChange, others, onDraw) {
   });
 
   const draw = () => {
-    if (activeCommit && activeCommit === commitOpen) activeCommit = null;
+    if (activeCommit && activeCommit === commitOpen) { activeCommit = null; activePending = null; }
     commitOpen = null;
     chips.replaceChildren(...(r.times.length ? r.times.map(cell) : [h("em", { class: "tb__empty" }, "Todavía no hay horarios. Escribí el primero abajo.")]));
     count.textContent = `${r.times.length} ${r.times.length === 1 ? "salida" : "salidas"} por día`;
@@ -383,7 +387,7 @@ function destinationsSection({ draft, dirty: baseDirty }) {
         imageField({ label: "Foto", url: d.image, maxWidth: 1100, hint: "Se optimiza sola. Mejor si es vertical o cuadrada.", onChange: (u) => { d.image = u; dirty(); } }),
         h("div", {},
           h("div", { class: "grid2" },
-            field({ label: "Nombre", value: d.name, list: "places-dl", normalize: (v) => canonPlace(draft, v), validate: (v) => (v.trim() ? "" : "Falta el nombre. Escribí el del lugar, por ejemplo Tilcara."), soft: (v) => (!v.trim() || knownPlace(draft, v) ? "" : "Ojo: este nombre no coincide con ninguna parada de Horarios, así que el botón «Ver horarios» no va a encontrar salidas."), onInput: (v) => { d.name = v; dirty(); } }),
+            field({ label: "Nombre", help: "El nombre del lugar, tal cual figura en Horarios (por ejemplo Tilcara). Tiene que coincidir con una parada para que el botón «Ver horarios» encuentre salidas. Si lo escribís distinto, se corrige solo al salir del campo.", value: d.name, list: "places-dl", normalize: (v) => canonPlace(draft, v), validate: (v) => (v.trim() ? "" : "Falta el nombre. Escribí el del lugar, por ejemplo Tilcara."), soft: (v) => (!v.trim() || knownPlace(draft, v) ? "" : "Ojo: este nombre no coincide con ninguna parada de Horarios, así que el botón «Ver horarios» no va a encontrar salidas."), onInput: (v) => { d.name = v; dirty(); } }),
             field({ label: "Zona (ej. Quebrada)", help: "Es la palabra chica que aparece sobre el nombre en la tarjeta del destino. Por ejemplo: Quebrada, Valle o Puna.", value: d.tag, onInput: (v) => { d.tag = v; dirty(); } })),
           field({ label: "Descripción corta", long: true, rows: 2, value: d.text, onInput: (v) => { d.text = v; dirty(); } }))) })));
 }
@@ -421,8 +425,8 @@ function boardSection({ draft, dirty }) {
     group("Foto de \"A bordo\"", "", h("div", { class: "split" },
       imageField({ label: "Foto", url: draft.boardImage.src, maxWidth: 1400, hint: "Mejor vertical (4:5) o apaisada.", onChange: (u) => { draft.boardImage.src = u; dirty(); } }),
       field({ label: "Descripción de la foto (para accesibilidad)", value: draft.boardImage.alt, onInput: (v) => { draft.boardImage.alt = v; dirty(); } }))),
-    group("Servicios a bordo", "La lista junto a la foto.",
-      listEditor({ id: "services", items: draft.services, onChange: dirty, addLabel: "Agregar servicio", max: 10, title: (s) => s[0] || "Servicio", make: () => ["", ""],
+    group("Comodidades a bordo", "La lista junto a la foto.",
+      listEditor({ id: "services", items: draft.services, onChange: dirty, addLabel: "Agregar comodidad", max: 10, title: (s) => s[0] || "Comodidad", make: () => ["", ""],
         render: (s) => h("div", { class: "grid2" },
           field({ label: "Nombre", value: s[0], onInput: (v) => { s[0] = v; dirty(); } }),
           field({ label: "Detalle", value: s[1], onInput: (v) => { s[1] = v; dirty(); } })) })));
@@ -464,18 +468,21 @@ function faqSection({ draft, dirty }) {
 function historySection({ draft, replaceDraft, published }) {
   const box = h("div", { class: "list" }, h("p", { class: "empty" }, "Cargando…"));
   listHistory().then((rows) => {
-    box.replaceChildren();
+    box.replaceChildren(); let shownRows = 0;
     if (!rows.length) return box.append(h("p", { class: "empty" }, "Todavía no hay versiones anteriores. Aparecen acá cada vez que guardás."));
     rows.forEach((r, i) => {
       // cada fila guarda cómo estaba la web antes de esa publicación: se compara con la versión que la reemplazó
       const newer = i === 0 ? published?.() : rows[i - 1].data;
       const labs = newer ? changedIds(r.data, newer).map((id) => SECTIONS.find((x) => x.id === id)?.label || id) : [];
+      if (!labs.length) return; // las publicaciones sin cambios de contenido no aportan nada
+      shownRows++;
       box.append(h("div", { class: "item item--row" },
-      h("div", {}, h("strong", {}, new Date(r.saved_at).toLocaleString("es-AR", { dateStyle: "long", timeStyle: "short" })), h("small", { class: "hint" }, labs.length ? `Esa publicación cambió: ${labs.join(", ")}` : "Publicación sin cambios de contenido")),
+      h("div", {}, h("strong", {}, `Antes de la publicación del ${new Date(r.saved_at).toLocaleString("es-AR", { dateStyle: "long", timeStyle: "short" })}`), h("small", { class: "hint" }, `Esa publicación cambió: ${labs.join(", ")}`)),
       h("button", { type: "button", class: "btn btn--ghost", onclick: () => {
-        undoToast("Cargaste esa versión en el editor. Todavía no está publicada: revisala y tocá Guardar y publicar.", () => replaceDraft(r.data));
-      } }, "Volver a esta versión")));
+        undoToast("Volviste a como estaba antes de esa publicación. Todavía no está publicado: revisalo y tocá Guardar y publicar.", () => replaceDraft(r.data));
+      } }, "Volver a como estaba antes")));
     });
+    if (!shownRows) box.append(h("p", { class: "empty" }, "Todavía no hay publicaciones con cambios para volver atrás."));
   }).catch((e) => { box.replaceChildren(h("p", { class: "err" }, e.message)); });
   return h("div", { class: "stack" }, group("Versiones anteriores", "Las últimas 20 publicaciones. Cada una dice qué cambió: cargala en el editor para volver a como estaba.", box));
 }
@@ -483,6 +490,7 @@ function historySection({ draft, replaceDraft, published }) {
 /* ---------- resumen: lo que le sirve al dueño al entrar ---------- */
 export const fmtDate = (d) => new Date(d).toLocaleString("es-AR", { dateStyle: "long", timeStyle: "short" });
 
+const nextIn = (nd) => { const x = nd.list[0]; if (!x || nd.tomorrow) return ""; const m = x.m - nowMin(); return m <= 0 ? " La próxima sale ahora." : m < 60 ? ` La próxima sale en ${m} min.` : ` La próxima sale en ${Math.floor(m / 60)} h ${m % 60} min.`; };
 function summarySection({ draft, goto, lastPublished }) {
   const errs = validate(draft);
   const lost = draft.destinations.filter((d) => d.name?.trim() && !knownPlace(draft, d.name));
@@ -495,7 +503,7 @@ function summarySection({ draft, goto, lastPublished }) {
   const more = (label, id, ico) => h("button", { type: "button", class: "morelink", onclick: () => goto(id) }, icon(ico, 18), label, icon("arrow", 16));
   const lp = lastPublished();
   return h("div", { class: "stack" },
-    group(nd.tomorrow ? "Primeras salidas de mañana" : "Próximas salidas", "Así las ve el pasajero ahora mismo en la web.", board),
+    group(nd.tomorrow ? "Primeras salidas de mañana" : "Próximas salidas", `Así las ve el pasajero ahora mismo en la web.${nextIn(nd)}`, board),
     group("¿Qué querés hacer?", "", h("div", { class: "actions" },
       h("button", { type: "button", class: "btn btn--primary btn--xl", onclick: () => goto("horarios") }, icon("horarios", 20), "Cambiar un horario"),
       h("div", { class: "actions__more" },
@@ -522,7 +530,7 @@ export const SECTIONS = [
   { id: "destinos", label: "Destinos", group: "Viajes", desc: "Los lugares a los que viaja la empresa.", help: ["Elegí la foto con \"Cambiar imagen\": se achica sola.", "Corregí el nombre y la descripción.", "El nombre tiene que ser igual a una parada de Horarios.", "Guardá y publicá."], render: destinationsSection },
   { id: "galeria", label: "Fotos", group: "Contenido", desc: "Fotos de la galería animada y de \"A bordo\".", help: ["Cambiá una foto con \"Cambiar imagen\": se achica sola.", "La galería necesita 6, 9, 12 o 15 fotos.", "Guardá y publicá."], render: together(gallerySection, boardSection) },
   { id: "contacto", label: "Contacto y preguntas", group: "Contenido", desc: "Teléfonos, WhatsApp, boleterías y preguntas frecuentes.", help: ["Corregí el dato que cambió.", "Los números se revisan solos al salir del campo.", "Guardá y publicá."], render: together(contactSection, faqSection) },
-  { id: "historial", label: "Versiones anteriores", group: "Avanzado", desc: "Versiones anteriores de la web, por si hay que volver atrás.", help: ["Elegí una versión de la lista.", "Tocá \"Cargar en el editor\" y revisala.", "Si está bien, tocá \"Guardar y publicar\"."], render: historySection },
+  { id: "historial", label: "Versiones anteriores", group: "Avanzado", desc: "Versiones anteriores de la web, por si hay que volver atrás.", help: ["Elegí una versión de la lista.", "Tocá \"Volver a como estaba antes\" y revisalo.", "Si está bien, tocá \"Guardar y publicar\"."], render: historySection },
 ];
 
 /* ---------- validacion antes de publicar ---------- */

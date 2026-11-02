@@ -1,21 +1,23 @@
 import { configured, getSession, signIn, signOut, isAdmin, fetchRemote, withDefaults, saveContent, listHistory } from "./api.js";
 import { h, toast, confirmBox, icon, plainErr, hooks, undoToast } from "./ui.js";
-import { SECTIONS, KEY2SEC, validate, strip, fmtDate, fmtShort, nextDepartures, commitPendingEdit, forgetPendingEdit, changedLabels } from "./sections.js";
+import { SECTIONS, KEY2SEC, validate, strip, fmtDate, fmtShort, nextDepartures, commitPendingEdit, hasPendingEdit, forgetPendingEdit, changedLabels } from "./sections.js";
 
 const app = document.getElementById("app");
 
 // localStorage puede no estar (ventana privada): todo lo que dependa de él es un extra, nunca un requisito
 const store = {
   get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
-  set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* sin almacenamiento */ } },
+  set: (k, v) => { try { localStorage.setItem(k, v); return true; } catch { return false; } },
   del: (k) => { try { localStorage.removeItem(k); } catch { /* sin almacenamiento */ } },
 };
 const DRAFT_KEY = "pm-admin-draft";
+// la base devuelve "…+00:00" y el panel guarda "…Z": son el mismo instante con distinto texto
+const same = (a, b) => !!a && !!b && +new Date(a) === +new Date(b);
 
 let user = null, draft = null, remoteData = null, lastPub = null, lastPubRaw = null, netBar, isDirty = false, current = store.get("pm-admin-section") || "resumen";
 let saveBtn, discardBtn, statusEl, topEl, sideEl, navEl, goto, redraw, stashTimer, paintTimer, histTimer, baseJson = {};
 let bannerOpen = false; // hay un borrador pendiente esperando que elijas "Recuperar" o "Descartar"
-let stashedOk = false, otherBar, otherSeen = null;
+let stashedOk = false, stashFailed = false, otherBar, otherSeen = null;
 let undoBtn, redoBtn, errBar, showErrBar = true, histRestored = false; // la barra de errores se muestra siempre que falte algo
 
 /* historial de cambios del borrador: deshacer y rehacer de todo, no solo de lo que se quita */
@@ -58,6 +60,7 @@ const plain = plainErr;
 // "hace 5 min" en vez de una fecha larga (pasado el día, la fecha corta)
 const ago = (d) => { const m = Math.round((Date.now() - +d) / 60000); return m < 1 ? "hace un momento" : m < 60 ? `hace ${m} min` : m < 1440 ? `hace ${Math.round(m / 60)} h` : "el " + fmtShort(d); };
 hooks.undo = () => histGo(-1);
+hooks.repaint = () => paintStatus();
 hooks.flush = () => { clearTimeout(histTimer); histPush(); };
 hooks.pos = () => hi;
 const mark = '<svg viewBox="0 0 24 24" width="26" height="26"><rect width="24" height="24" rx="7" fill="#f4b400"/><path d="M2 18c7 1 14-3 20-11v5C16 19 9 22 2 21z" fill="#171200"/><path d="M2 21c7 1 14-3 20-11" stroke="#d8261f" stroke-width="2.2" fill="none"/></svg>';
@@ -117,7 +120,7 @@ function loginScreen(error) {
   } },
     h("div", { class: "field" }, h("label", { for: "em" }, "Email"), email),
     h("div", { class: "field" }, h("label", { for: "pw" }, "Contraseña"), pass), err, btn);
-  app.replaceChildren(entry([h("h1", {}, "Panel de administración"), h("p", { class: "lead" }, "Ingresá con tu usuario para editar la web."), form], false, loginBoard()));
+  app.replaceChildren(entry([h("h1", {}, "Panel de administración"), h("p", { class: "lead" }, "Ingresá con tu usuario para editar la web."), form, h("p", { class: "hint" }, "¿No podés entrar o te olvidaste la contraseña? Pedile a quien administra la web que te la restablezca.")], false, loginBoard()));
   email.focus();
 }
 
@@ -150,10 +153,10 @@ function deniedScreen(email) {
 }
 
 /* ---------- panel ---------- */
-const stashDraft = () => { if (user && draft) store.set(DRAFT_KEY, JSON.stringify({ at: Date.now(), user: user.id, base: lastPubRaw, data: strip(draft) })); };
+const stashDraft = () => (user && draft ? store.set(DRAFT_KEY, JSON.stringify({ at: Date.now(), user: user.id, base: lastPubRaw, data: strip(draft) })) : false);
 const setDirty = () => {
   if (!isDirty) { isDirty = true; paintStatus(); }
-  stashedOk = false; clearTimeout(stashTimer); stashTimer = setTimeout(() => { stashDraft(); stashedOk = true; paintStatus(); }, 700); // borrador automático en este navegador
+  stashedOk = false; clearTimeout(stashTimer); stashTimer = setTimeout(() => { stashedOk = stashDraft(); stashFailed = !stashedOk; paintStatus(); }, 700); // borrador automático en este navegador
   clearTimeout(paintTimer); paintTimer = setTimeout(paintStatus, 250);
   clearTimeout(histTimer); histTimer = setTimeout(histPush, 500);
 };
@@ -176,9 +179,11 @@ function paintStatus() {
   const ch = isDirty ? [...changedSections()] : [];
   statusEl.title = ch.map(sectionLabel).join(", ");
   statusEl.textContent = isDirty ? (ch.length > 1 ? `Hay cambios sin publicar en ${ch.length} pantallas` : ch.length ? `Hay cambios sin publicar en ${sectionLabel(ch[0])}` : "Hay cambios sin publicar") : lastPub ? `Publicado ${ago(lastPub)}` : "Todo publicado";
-  if (isDirty && stashedOk) statusEl.append(h("small", { class: "state__saved" }, " · borrador guardado"));
+  if (isDirty && stashedOk) statusEl.append(h("small", { class: "state__saved", "aria-hidden": "true" }, "Cambios guardados en este navegador"));
+  else if (isDirty && stashFailed) statusEl.append(h("small", { class: "state__saved state__saved--bad" }, "No se pudieron guardar en este navegador: publicá cuanto antes"));
+  if (!isDirty && hasPendingEdit()) statusEl.append(h("small", { class: "state__saved" }, "Hora sin confirmar"));
   statusEl.className = "state " + (isDirty ? "is-dirty" : "is-ok");
-  saveBtn.disabled = !isDirty;
+  saveBtn.disabled = !(isDirty || hasPendingEdit());
   saveBtn.title = isDirty ? "Guardar y publicar (Ctrl+S)" : "No hay cambios para publicar";
   discardBtn.hidden = !isDirty;
   navEl?.querySelectorAll("button[data-id]").forEach((b) => b.classList.toggle("has-changes", ch.includes(b.dataset.id)));
@@ -206,7 +211,7 @@ async function publish() {
       if (e.code !== "CONFLICT") throw e;
       let detail = "";
       try { const cur = await limit(fetchRemote()); const labs = changedLabels(remoteData, cur?.data); detail = ` (${fmtShort(cur.updated_at)}${labs.length ? ": cambió " + labs.join(", ") : ""})`; } catch { /* sin detalle */ }
-      if (!(await confirmBox(`Otra persona publicó cambios mientras editabas${detail}. Si publicás ahora, los reemplazás. ¿Publicar igual?`, "Publicar igual", "Cancelar"))) { toast("No se publicó nada. Tu borrador sigue acá.", "ok", 8000, { label: "Actualizar y ver lo nuevo", icon: "redo", run: () => { stashDraft(); location.reload(); } }); return; }
+      if (!(await confirmBox(`Otra persona publicó cambios mientras editabas${detail}. Si publicás ahora, los reemplazás. ¿Publicar igual?`, "Publicar igual", "Cancelar", { focusCancel: true }))) { toast("No se publicó nada. Tu borrador sigue acá.", "ok", 8000, { label: "Actualizar y ver lo nuevo", icon: "redo", run: () => { stashDraft(); location.reload(); } }); return; }
       at = await saveContent(strip(draft), user.id, null);
     }
     remoteData = strip(draft); lastPub = new Date(at); lastPubRaw = at; computeBase(); histSave(); store.del(DRAFT_KEY); clearTimeout(stashTimer);
@@ -280,7 +285,7 @@ function palette() {
 }
 
 function shell(pending) {
-  const main = h("div", { class: "main" });
+  const main = h("main", { class: "main" });
   navEl = h("nav", { class: "side__nav", "aria-label": "Secciones" });
   const ctx = {
     dirty: setDirty,
@@ -294,10 +299,11 @@ function shell(pending) {
     forgetPendingEdit(); // la ventanita de la pantalla anterior ya no existe
     const sec = SECTIONS.find((s) => s.id === current) || SECTIONS[0];
     navEl.querySelectorAll("button[data-id]").forEach((b) => b.setAttribute("aria-current", String(b.dataset.id === sec.id)));
+    document.title = `${sec.label} · Panel de Panamericano`;
     const y = scrollY;
     main.replaceChildren(
       h("div", { class: "head" },
-        h("div", {}, h("h2", { class: "title" }, sec.label), sec.desc && h("p", { class: "title__desc" }, sec.desc)),
+        h("div", {}, h("h2", { class: "title", tabindex: "-1" }, sec.label), sec.desc && h("p", { class: "title__desc" }, sec.desc)),
         h("button", { type: "button", class: "btn btn--ghost btn--sm", onclick: () => help(sec) }, icon("preguntas", 17), "¿Cómo se hace?")),
       sec.render({ ...ctx, draft }));
     scrollTo(0, y);
@@ -325,8 +331,8 @@ function shell(pending) {
     target.classList.add("is-flash"); setTimeout(() => target.classList.remove("is-flash"), 2400);
   };
   goto = (id, t) => {
-    current = id; store.set("pm-admin-section", id); draw(); sideEl?.classList.remove("is-open");
-    if (t && (t.item != null || t.field)) requestAnimationFrame(() => focusTarget(t)); else scrollTo(0, 0);
+    current = id; store.set("pm-admin-section", id); draw(); sideEl?.classList.remove("is-open"); sideEl?.querySelector(".side__toggle")?.setAttribute("aria-expanded", "false");
+    if (t && (t.item != null || t.field)) requestAnimationFrame(() => focusTarget(t)); else { scrollTo(0, 0); main.querySelector(".title")?.focus({ preventScroll: true }); } // quien usa lector de pantalla oye la pantalla nueva
   };
 
   let last = "";
@@ -337,12 +343,12 @@ function shell(pending) {
 
   statusEl = h("span", { class: "state", role: "status" });
   saveBtn = h("button", { class: "btn btn--primary", type: "button", onclick: publish }); saveLabel();
-  discardBtn = h("button", { class: "btn btn--ghost", type: "button", hidden: true, onclick: () => {
+  discardBtn = h("button", { class: "btn btn--ghost btn--discard", type: "button", hidden: true, title: "Descartar los cambios sin publicar", "aria-label": "Descartar cambios", onclick: () => {
     // sin pregunta: se descarta y queda a mano "Deshacer"
     undoToast("Descartaste los cambios sin publicar.", () => {
       draft = withDefaults(structuredClone(remoteData)); isDirty = false; clearTimeout(stashTimer); store.del(DRAFT_KEY); clearTimeout(histTimer); histPush(); paintStatus(); draw();
     });
-  } }, "Descartar cambios");
+  } }, icon("trash", 17), h("span", { class: "lbl-txt" }, "Descartar cambios"));
 
   // borrador de una sesión anterior que no se llegó a publicar
   bannerOpen = !!pending;
@@ -358,17 +364,17 @@ function shell(pending) {
   errBar = h("div", { class: "errbar", role: "status", "aria-live": "polite", hidden: true });
   otherBar = h("div", { class: "netbar netbar--other", role: "status", hidden: true });
   netBar = h("div", { class: "netbar", role: "status", hidden: navigator.onLine !== false }, "Sin conexión. Tus cambios se guardan en este navegador y se publican cuando vuelva internet y toques Guardar.");
-  topEl = h("header", { class: "top" }, h("div", { class: "busybar", "aria-hidden": "true" }), statusEl, h("span", { class: "top__undo" }, undoBtn, redoBtn), h("a", { class: "link", href: "/", target: "_blank", rel: "noopener" }, "Ver la web", icon("external", 16)), discardBtn, saveBtn);
+  topEl = h("header", { class: "top" }, h("div", { class: "busybar", "aria-hidden": "true" }), statusEl, h("span", { class: "top__undo" }, undoBtn, redoBtn), discardBtn, saveBtn);
   sideEl = h("aside", { class: "side" }, h("div", { class: "livery", "aria-hidden": "true" }),
     h("div", { class: "side__bar" }, brand(),
-      h("button", { type: "button", class: "side__toggle", "aria-label": "Abrir el menú", onclick: () => sideEl.classList.toggle("is-open") }, icon("menu", 22))),
+      h("button", { type: "button", class: "side__toggle", "aria-label": "Abrir el menú", "aria-expanded": "false", onclick: (e) => { const o = sideEl.classList.toggle("is-open"); e.currentTarget.setAttribute("aria-expanded", String(o)); } }, icon("menu", 22))),
     h("div", { class: "side__body" },
-      h("button", { type: "button", class: "side__search", onclick: palette }, icon("search", 17), h("span", {}, "Ir a…"), h("kbd", {}, "Ctrl K")),
+      h("button", { type: "button", class: "side__search", title: "Buscar una pantalla, un servicio o una ayuda (Ctrl+K)", onclick: palette }, icon("search", 17), h("span", {}, "Ir a…"), h("kbd", {}, "Ctrl K")),
       navEl,
       h("div", { class: "side__foot" }, h("small", {}, user.email),
-        h("a", { class: "link only-m", href: "/", target: "_blank", rel: "noopener" }, icon("external", 16), "Ver la web"),
+        h("a", { class: "link", href: "/", target: "_blank", rel: "noopener" }, icon("external", 16), "Ver la web"),
         h("button", { type: "button", class: "link", onclick: async () => {
-          if (isDirty && !(await confirmBox("Hay cambios sin publicar. Quedan guardados en este navegador para cuando vuelvas a entrar. ¿Salir igual?", "Salir"))) return;
+          if (isDirty && !(await confirmBox("Hay cambios sin publicar. Quedan guardados en este navegador para cuando vuelvas a entrar. ¿Salir igual?", "Salir", "Cancelar", { focusCancel: true }))) return;
           if (isDirty) stashDraft();
           isDirty = false; await signOut(); await boot();
         } }, icon("logout", 17), "Cerrar sesión"))));
@@ -395,7 +401,7 @@ async function boot() {
     let pending = null;
     try { pending = JSON.parse(store.get(DRAFT_KEY) || "null"); } catch { pending = null; }
     if (!pending || pending.user !== user.id || JSON.stringify(pending.data) === JSON.stringify(strip(draft))) { if (pending) store.del(DRAFT_KEY); pending = null; }
-    if (pending) pending.stale = !!(pending.base && lastPubRaw && pending.base !== lastPubRaw); // otra persona publicó después de ese borrador
+    if (pending) pending.stale = !!(pending.base && lastPubRaw && !same(pending.base, lastPubRaw)); // otra persona publicó después de ese borrador
     // si había un historial guardado de esta misma versión, se recupera (deshacer sigue funcionando tras recargar)
     histRestored = false;
     try {
@@ -428,7 +434,7 @@ setInterval(async () => {
   if (!statusEl?.isConnected || !lastPubRaw || navigator.onLine === false) return;
   try {
     const cur = await limit(fetchRemote());
-    if (cur?.updated_at && cur.updated_at !== lastPubRaw && cur.updated_at !== otherSeen) {
+    if (cur?.updated_at && !same(cur.updated_at, lastPubRaw) && !same(cur.updated_at, otherSeen)) {
       otherSeen = cur.updated_at; const labs = changedLabels(remoteData, cur.data);
       otherBar.hidden = false;
       otherBar.replaceChildren(h("span", {}, `Otra persona publicó cambios (${fmtShort(cur.updated_at)}${labs.length ? ": " + labs.join(", ") : ""}). Tu borrador sigue acá y se guarda.`),
