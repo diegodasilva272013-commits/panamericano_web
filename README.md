@@ -55,6 +55,17 @@ Cómo está protegido: la web pública solo puede *ver qué asientos están ocup
 
 Pruebas de la base: la lógica del SQL se probó contra una base Postgres real (casos de choques de asientos, tramos, permisos y abusos).
 
+### Gestión: reservas, cobros y finanzas (`/erp`)
+
+Es la parte de **gestión de la empresa**, separada del editor de la web (`/admin`). Entra con el mismo usuario administrador y no toca el contenido del sitio.
+
+1. **Una sola vez:** en Supabase > SQL Editor pegá y ejecutá `supabase/erp.sql` (después de `schema.sql` y `booking.sql`). Solo crea dos tablas (`payments` y `expenses`), no cambia ni borra nada; se puede volver a ejecutar.
+2. Pantallas: **Inicio** (lo del día y lo que hay que resolver), **Reservas** (todas, con búsqueda, filtros y ficha de cada una), **Salidas** (planilla de pasajeros por salida, imprimible), **Pasajeros** (historial por persona), **Cobros** (cobros registrados, por cobrar y a devolver), **Gastos** y **Finanzas** (resultado del mes, por servicio, libro de caja).
+3. Cada reserva tiene su cuenta: total (suma de las tarifas de sus asientos), cobros (seña + saldo, en efectivo, transferencia, Mercado Pago o tarjeta) y saldo. Cancelar una reserva ya cobrada la deja *A devolver* hasta registrar la devolución.
+4. Todo se puede exportar a Excel (CSV con separador `;`).
+
+Criterios: *Cobrado* es plata que entró por fecha de cobro (neta de devoluciones); *Vendido* es el valor de los viajes por fecha de viaje. Se cargan los últimos 2 años y todo lo futuro. No hay cobro online: los cobros los registra el personal.
+
 ### Límites del plan gratuito de Supabase (importante)
 - **Almacenamiento: 1 GB.** Cada hero nuevo ocupa ~75 MB; borrar las versiones viejas desde el panel.
 - **Tráfico: 5 GB por mes.** Las fotos pesan poco, pero **los cuadros de un hero propio los sirve Supabase**: un visitante que recorre todo el hero baja hasta ~52 MB (escritorio) o ~22 MB (celular). El hero original incluido en el sitio se sirve desde Vercel y no tiene este límite.

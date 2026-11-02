@@ -410,6 +410,7 @@ function shell(pending) {
       navEl,
       h("div", { class: "side__foot" }, h("small", {}, user.email),
         h("a", { class: "link", href: "/", target: "_blank", rel: "noopener" }, icon("external", 16), "Ver la web"),
+        h("a", { class: "link", href: "/erp" }, icon("coin", 16), "Gestión: cobros y finanzas"),
         h("button", { type: "button", class: "link", onclick: async () => {
           if ((isDirty || videoHasWork()) && !(await confirmBox(videoBusy() ? "Se está generando el video de la portada. Si salís ahora, se corta y hay que empezar de nuevo. ¿Salir igual?" : isDirty ? "Hay cambios sin publicar. Quedan guardados en este navegador para cuando vuelvas a entrar. ¿Salir igual?" : "Tenés videos cargados en el generador de la portada. Si salís, hay que cargarlos de nuevo. ¿Salir igual?", "Salir", "Cancelar", { focusCancel: true }))) return;
           resetVideo();

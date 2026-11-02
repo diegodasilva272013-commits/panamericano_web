@@ -9,9 +9,9 @@ const site = () => {
   return (raw.startsWith("http") ? raw : `https://${raw}`).replace(/\/$/, "");
 };
 
-// /admin -> admin.html (en desarrollo y en vite preview; en Vercel lo resuelve cleanUrls de vercel.json)
+// /admin -> admin.html y /erp -> erp.html (en desarrollo y en vite preview; en Vercel lo resuelve cleanUrls de vercel.json)
 const adminRoute = () => {
-  const mw = (req, _res, next) => { if (req.url === "/admin" || req.url.startsWith("/admin?")) req.url = "/admin.html"; next(); };
+  const mw = (req, _res, next) => { for (const p of ["admin", "erp"]) if (req.url === "/" + p || req.url.startsWith("/" + p + "?")) req.url = "/" + p + ".html"; next(); };
   return { name: "admin-route", configureServer(s) { s.middlewares.use(mw); }, configurePreviewServer(s) { s.middlewares.use(mw); } };
 };
 
@@ -21,6 +21,6 @@ export default {
     adminRoute(),
   ],
   build: {
-    rollupOptions: { input: { main: resolve(import.meta.dirname, "index.html"), admin: resolve(import.meta.dirname, "admin.html") } },
+    rollupOptions: { input: { main: resolve(import.meta.dirname, "index.html"), admin: resolve(import.meta.dirname, "admin.html"), erp: resolve(import.meta.dirname, "erp.html") } },
   },
 };
