@@ -157,7 +157,7 @@ function heroSection(ctx) {
     groupAside("Titular de entrada", "Lo primero que se ve al abrir la web.", hpv.el, h("div", { class: "grid2" },
       field({ label: "Titular", value: hero.headline, validate: (v) => (v.trim() ? "" : "Falta el titular. Es la frase grande de la portada."), onInput: (v) => { hero.headline = v; dirty(); } }),
       field({ label: "Frase debajo del titular", value: hero.subheadline, onInput: (v) => { hero.subheadline = v; dirty(); } }),
-      field({ label: "Invitación a scrollear", value: hero.hint, onInput: (v) => { hero.hint = v; dirty(); } }))),
+      field({ label: "Invitación a deslizar", value: hero.hint, onInput: (v) => { hero.hint = v; dirty(); } }))),
     group("Botones de la portada", "Los botones que van debajo del titular. Elegí qué dice cada uno y a dónde lleva.",
       listEditor({ id: "ctas", items: hero.ctas, onChange: dirty, addLabel: "Agregar botón", max: 3, min: 1, make: () => ({ label: "Nuevo botón", href: "#horarios" }), title: (c) => c.label || "Botón",
         render: (c) => {
@@ -169,9 +169,9 @@ function heroSection(ctx) {
             h("div", { class: "checks" },
               check({ label: "Botón principal (amarillo)", value: c.primary, onChange: (v) => { c.primary = v; dirty(); } }), ext));
         } })),
-    group("Textos de cada etapa del viaje", hero.frames ? "Cada etapa corresponde a uno de los videos que se subieron. Para agregar o quitar etapas, subí el video de nuevo (abajo)." : "Cada etapa corresponde a uno de los 5 videos originales. Para cambiar la cantidad de etapas, subí un video nuevo (abajo).",
+    group("Textos de cada paso del viaje", hero.frames ? "Cada paso corresponde a uno de los videos que se subieron. Para agregar o quitar pasos, subí el video de nuevo (abajo)." : "Cada paso corresponde a uno de los 5 videos originales. Para cambiar la cantidad de pasos, subí un video nuevo (abajo).",
       h("div", { class: "list" }, hero.etapas.map((e, i) => h("div", { class: "item" },
-        h("div", { class: "item__bar" }, h("strong", {}, `Etapa ${i + 1}`)),
+        h("div", { class: "item__bar" }, h("strong", {}, `Paso ${i + 1}`)),
         h("div", { class: "grid3" },
           field({ label: "Título grande", value: e.title, onInput: (v) => { e.title = v; dirty(); } }),
           field({ label: "Detalle", value: e.detail, onInput: (v) => { e.detail = v; dirty(); } }),
@@ -198,6 +198,7 @@ export function nextDepartures(routes, n = 4) {
 // lugares que existen en Horarios (para avisar si un destino no coincide con ninguno)
 const placeList = (d) => [...new Set(d.routes.flatMap((r) => [r.from, r.to, ...(r.stops || [])]).map((x) => String(x || "").replace(/\*/g, "").trim()).filter(Boolean))];
 const normPlace = (x) => String(x).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+const canonPlace = (d, name) => placeList(d).find((p) => normPlace(p) === normPlace(name)) || name;
 const knownPlace = (d, name) => placeList(d).some((p) => normPlace(p) === normPlace(name));
 const setDays = (r, days) => { if (days && Object.keys(days).length) r.days = days; else delete r.days; };
 const hhmm = (m) => `${String(Math.floor(((m % 1440) + 1440) % 1440 / 60)).padStart(2, "0")}:${String((((m % 60) + 60) % 60)).padStart(2, "0")}`;
@@ -223,7 +224,7 @@ function timesBoard(r, onChange, others, onDraw) {
   const undoable = (msg, fn) => undoToast(msg, fn);
 
   const cell = (t, i) => {
-    const btn = h("button", { type: "button", class: "tb__chip" + (open === i ? " is-open" : ""), "aria-expanded": String(open === i), "aria-haspopup": "dialog", title: "Tocá para cambiar la hora o quitarla",
+    const btn = h("button", { type: "button", class: "tb__chip" + (open === i ? " is-open" : ""), "aria-expanded": String(open === i), "aria-haspopup": "dialog", onkeydown: (e) => { if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return; const all = [...chips.querySelectorAll(".tb__chip")]; const j = all.indexOf(e.currentTarget) + (e.key === "ArrowRight" ? 1 : -1); if (all[j]) { all[j].focus(); e.preventDefault(); } }, title: "Tocá para cambiar la hora o quitarla",
       onclick: () => {
         if (open === i) { refocus = t; open = -1; draw(); return; }
         if (open !== -1 && commitOpen && !commitOpen()) return; // se guarda lo que se estaba escribiendo
@@ -326,7 +327,7 @@ function timesFold(r, i, dirty, routes) {
 }
 
 /* ---------- horarios ---------- */
-function routesSection({ draft, dirty: baseDirty }) {
+function routesSection({ draft, dirty: baseDirty, rerender }) {
   const routes = draft.routes;
   let board;
   const dirty = () => { baseDirty(); board?.update(); };
@@ -351,8 +352,24 @@ function routesSection({ draft, dirty: baseDirty }) {
           field({ label: "Nota (se muestra debajo)", long: true, rows: 2, value: r.note, onInput: (v) => { r.note = v; dirty(); } })))),
   });
   board = departuresBoard(routes);
+  // buscar entre los servicios
+  const filter = h("input", { type: "search", class: "svc__find", placeholder: "Buscar un servicio (por ejemplo: Tilcara)", "aria-label": "Buscar un servicio" });
+  filter.addEventListener("input", () => { const q = normPlace(filter.value); [...list.querySelectorAll(":scope > .item")].forEach((it) => { it.hidden = !!q && !normPlace(it.querySelector(".item__title")?.textContent || "").includes(q); }); });
+  // correr todas las salidas de varios servicios a la vez
+  const mins = h("input", { type: "number", value: 10, min: 1, max: 600, "aria-label": "Minutos" });
+  const from = h("select", { "aria-label": "Qué servicios" }, h("option", { value: "" }, "Todos los servicios"), ...origins().map((o) => h("option", { value: o }, `Los que salen de ${o}`)));
+  const shiftAll = (sign) => {
+    const n = Math.max(1, Math.min(600, +mins.value || 10)) * sign, pick = routes.filter((r) => !from.value || r.from === from.value);
+    undoToast(`Corriste ${pick.length} ${pick.length === 1 ? "servicio" : "servicios"} ${n > 0 ? "+" : "−"}${Math.abs(n)} min.`, () => {
+      pick.forEach((r) => { const days = {}; r.times = r.times.map((t) => { const nt = hhmm(+t.slice(0, 2) * 60 + +t.slice(3) + n); if (r.days?.[t]) days[nt] = r.days[t]; return nt; }).sort(); setDays(r, days); });
+      dirty(); rerender();
+    });
+  };
+  const bulk = h("details", { class: "adv bulk" }, h("summary", {}, "Correr las salidas de varios servicios a la vez"),
+    h("div", { class: "bulk__row" }, from, mins, h("span", {}, "min"),
+      h("button", { type: "button", class: "btn btn--ghost", onclick: () => shiftAll(-1) }, "Adelantar"), h("button", { type: "button", class: "btn btn--ghost", onclick: () => shiftAll(1) }, "Atrasar")));
   return h("div", { class: "stack" }, dl,
-    groupAside("Tus servicios", `${routes.length} servicios, ${routes.reduce((n, r) => n + (r.times?.length || 0), 0)} salidas por día. Buscá el servicio y tocá una hora para cambiarla.`, board.el, list));
+    groupAside("Tus servicios", `${routes.length} servicios, ${routes.reduce((n, r) => n + (r.times?.length || 0), 0)} salidas por día. Buscá el servicio y tocá una hora para cambiarla.`, board.el, h("div", { class: "svc__tools" }, filter, bulk), list));
 }
 
 /* ---------- destinos ---------- */
@@ -366,7 +383,7 @@ function destinationsSection({ draft, dirty: baseDirty }) {
         imageField({ label: "Foto", url: d.image, maxWidth: 1100, hint: "Se optimiza sola. Mejor si es vertical o cuadrada.", onChange: (u) => { d.image = u; dirty(); } }),
         h("div", {},
           h("div", { class: "grid2" },
-            field({ label: "Nombre", value: d.name, list: "places-dl", validate: (v) => (v.trim() ? "" : "Falta el nombre. Escribí el del lugar, por ejemplo Tilcara."), soft: (v) => (!v.trim() || knownPlace(draft, v) ? "" : "Ojo: este nombre no coincide con ninguna parada de Horarios, así que el botón «Ver horarios» no va a encontrar salidas."), onInput: (v) => { d.name = v; dirty(); } }),
+            field({ label: "Nombre", value: d.name, list: "places-dl", normalize: (v) => canonPlace(draft, v), validate: (v) => (v.trim() ? "" : "Falta el nombre. Escribí el del lugar, por ejemplo Tilcara."), soft: (v) => (!v.trim() || knownPlace(draft, v) ? "" : "Ojo: este nombre no coincide con ninguna parada de Horarios, así que el botón «Ver horarios» no va a encontrar salidas."), onInput: (v) => { d.name = v; dirty(); } }),
             field({ label: "Zona (ej. Quebrada)", help: "Es la palabra chica que aparece sobre el nombre en la tarjeta del destino. Por ejemplo: Quebrada, Valle o Puna.", value: d.tag, onInput: (v) => { d.tag = v; dirty(); } })),
           field({ label: "Descripción corta", long: true, rows: 2, value: d.text, onInput: (v) => { d.text = v; dirty(); } }))) })));
 }
@@ -375,17 +392,24 @@ function destinationsSection({ draft, dirty: baseDirty }) {
 function galleryStatus(n) {
   if (n < 6) return { ok: false, msg: `Hay ${n} fotos. Necesitás al menos 6.` };
   if (n > 15) return { ok: false, msg: `Hay ${n} fotos. El máximo es 15.` };
-  if (n % 3) return { ok: false, msg: `Hay ${n} fotos. Para que la grilla quede completa tiene que ser un múltiplo de 3: agregá ${3 - (n % 3)} más o quitá ${n % 3}.` };
+  if (n % 3) return { ok: false, msg: `Hay ${n} fotos. Para que la galería quede completa tienen que ser 6, 9, 12 o 15: agregá ${3 - (n % 3)} más o quitá ${n % 3}.` };
   return { ok: true, msg: `${n} fotos: la grilla queda completa.` };
 }
-function gallerySection({ draft, dirty: baseDirty }) {
+function gallerySection({ draft, dirty: baseDirty, rerender }) {
   const gpv = galleryPreview(draft.gallery);
   const dirty = () => { baseDirty(); gpv.update(); };
   const status = h("p", { class: "status" });
-  const upd = () => { const s = galleryStatus(draft.gallery.length); status.textContent = s.msg; status.className = "status " + (s.ok ? "is-ok" : "is-bad"); };
+  const fix = h("div", { class: "list__add" });
+  const fixUpd = () => {
+    const n = draft.gallery.length; fix.replaceChildren();
+    const target = n < 6 ? 6 : n > 15 ? 15 : n % 3 ? n + (3 - (n % 3)) : n;
+    if (target > n && target <= 15) fix.append(h("button", { type: "button", class: "btn btn--ghost", onclick: () => { while (draft.gallery.length < target) draft.gallery.push({ src: "", caption: "" }); dirty(); rerender(); } }, icon("plus", 16), `Agregar ${target - n} para completar (${target})`));
+    if (n > 15 || (n % 3 && n > 6)) { const lower = n > 15 ? 15 : n - (n % 3); fix.append(h("button", { type: "button", class: "btn btn--ghost", onclick: () => undoToast(`Quitaste las últimas ${n - lower} fotos.`, () => { draft.gallery.length = lower; dirty(); rerender(); }) }, icon("x", 16), `Quitar las últimas ${n - lower} (${lower})`)); }
+  };
+  const upd = () => { const s = galleryStatus(draft.gallery.length); status.textContent = s.msg; status.className = "status " + (s.ok ? "is-ok" : "is-bad"); fixUpd(); };
   upd();
   return h("div", { class: "stack" },
-    groupAside("Galería animada de la web", "Son las fotos que entran y se agrandan en el bloque \"Conectamos caminos\". Tienen que ser un múltiplo de 3 (6, 9, 12 o 15).", gpv.el, status,
+    groupAside("Galería animada de la web", "Son las fotos que entran y se agrandan en el bloque \"Conectamos caminos\". Tienen que ser un múltiplo de 3 (6, 9, 12 o 15).", gpv.el, status, fix,
       listEditor({ id: "gallery", items: draft.gallery, onChange: () => { upd(); dirty(); }, addLabel: "Agregar foto", max: 15, min: 6, title: (g, i) => g.caption || `Foto ${i + 1}`, sub: (g, i) => `N.º ${i + 1}`,
         make: () => ({ src: "", caption: "" }),
         render: (g) => h("div", { class: "split" },
@@ -423,7 +447,7 @@ function contactSection({ draft, dirty: baseDirty }) {
           field({ label: "Localidad", value: b.name, onInput: (v) => { b.name = v; dirty(); } }),
           field({ label: "Teléfono", value: b.tel, onInput: (v) => { b.tel = v; dirty(); } }),
           field({ label: "Detalle (opcional)", value: b.sub || "", onInput: (v) => { if (v) b.sub = v; else delete b.sub; dirty(); } })) })),
-    group("Asistente de voz (avanzado)", "Es el código del asistente que atiende las llamadas de voz desde la web. No lo cambies si no estás seguro.",
+    group("Atención por voz (avanzado)", "Es el código del asistente que atiende las llamadas de voz desde la web. No lo cambies si no estás seguro.",
       field({ label: "Código del asistente de voz", help: "Es el código que identifica al asistente que atiende las llamadas desde la web. No lo cambies si no estás seguro.", value: site.agentId, mono: true, onInput: (v) => { site.agentId = v.trim(); dirty(); } })));
 }
 
@@ -448,9 +472,9 @@ function historySection({ draft, replaceDraft, published }) {
       const labs = newer ? changedIds(r.data, newer).map((id) => SECTIONS.find((x) => x.id === id)?.label || id) : [];
       box.append(h("div", { class: "item item--row" },
       h("div", {}, h("strong", {}, new Date(r.saved_at).toLocaleString("es-AR", { dateStyle: "long", timeStyle: "short" })), h("small", { class: "hint" }, labs.length ? `Esa publicación cambió: ${labs.join(", ")}` : "Publicación sin cambios de contenido")),
-      h("button", { type: "button", class: "btn btn--ghost", onclick: async () => {
-        if (await confirmBox("Se va a cargar esta versión en el editor. No se publica hasta que toques \"Guardar y publicar\". ¿Seguir?", "Cargar versión")) { replaceDraft(r.data); toast("Versión cargada en el editor. Revisala y guardá para publicarla."); }
-      } }, "Cargar en el editor")));
+      h("button", { type: "button", class: "btn btn--ghost", onclick: () => {
+        undoToast("Cargaste esa versión en el editor. Todavía no está publicada: revisala y tocá Guardar y publicar.", () => replaceDraft(r.data));
+      } }, "Volver a esta versión")));
     });
   }).catch((e) => { box.replaceChildren(h("p", { class: "err" }, e.message)); });
   return h("div", { class: "stack" }, group("Versiones anteriores", "Las últimas 20 publicaciones. Cada una dice qué cambió: cargala en el editor para volver a como estaba.", box));

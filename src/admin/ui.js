@@ -100,8 +100,37 @@ export function confirmBox(msg, okLabel = "Aceptar", cancelLabel = "Cancelar") {
 let uid = 0;
 // validate(valor) -> texto del problema o "": se muestra al salir del campo, no recién al publicar
 // help: explicación corta que se abre con un "?" junto a la etiqueta (para los campos que no se entienden solos)
-export function field({ label, hint, help, value, onInput, long, type = "text", placeholder, rows = 3, mono, error, list, validate, soft }) {
+// "?" para casi todos los campos: qué es y dónde se ve en la web
+const HELP = [
+  ["Titular", "Es la frase grande que se ve primero al abrir la web."],
+  ["Frase debajo del titular", "La frase más chica que acompaña al titular en la portada."],
+  ["Invitación a deslizar", "El aviso chico que invita a bajar por la página, por ejemplo: Deslizá para viajar."],
+  ["Texto del botón", "Lo que dice el botón. Mejor corto: Ver horarios, WhatsApp."],
+  ["Título grande", "El título de este paso del viaje, en letras grandes sobre el video."],
+  ["Detalle (opcional)", "Un dato extra de la boletería, por ejemplo el horario de atención."],
+  ["Detalle", "La frase chica que acompaña al título."],
+  ["Nombre corto", "La palabra que aparece abajo, en la barra que recorre los pasos del viaje."],
+  ["Sale desde", "El lugar de donde sale este servicio. Si ya existe en otro servicio, elegilo de la lista para que no haya dos escrituras distintas."],
+  ["Nombre del servicio", "Cómo se llama el recorrido (por ejemplo Ruta 9). Se muestra en el tablero de salidas."],
+  ["Paradas", "Todos los lugares donde este servicio puede llevar o dejar pasajeros, separados por coma y en orden. Con esto funciona el buscador de horarios."],
+  ["Nota", "Un aviso opcional que se ve debajo de este servicio, por ejemplo: Salida solo los viernes."],
+  ["Nombre que aparece", "El nombre que se lee sobre la foto en la galería."],
+  ["Descripción de la foto", "Una frase que cuenta qué se ve en la foto, para quien usa lector de pantalla."],
+  ["Descripción corta", "Dos líneas sobre el lugar. Se ven en la tarjeta del destino."],
+  ["Dirección", "La dirección de la empresa, tal como se lee abajo de todo en la web."],
+  ["Teléfono central", "El número que se muestra y al que llama el botón «Llamar»."],
+  ["Localidad", "El pueblo donde está la boletería."],
+  ["Teléfono", "El teléfono de esa boletería, con código de área."],
+  ["Pregunta", "La pregunta tal como la haría un pasajero."],
+  ["Respuesta", "La respuesta completa. Podés escribir varias frases."],
+  ["Título, primera línea", "La primera línea del título, en blanco."],
+  ["Título, segunda línea", "La segunda línea del título, con el color que dice entre paréntesis."],
+  ["Párrafo", "El texto que acompaña al título."],
+];
+const lookupHelp = (label) => (HELP.find(([k]) => String(label).startsWith(k)) || [])[1];
+export function field({ label, hint, help: helpArg, normalize, value, onInput, long, type = "text", placeholder, rows = 3, mono, error, list, validate, soft }) {
   const id = `f${++uid}`;
+  const help = helpArg ?? lookupHelp(label);
   const input = long
     ? h("textarea", { id, rows, placeholder, class: mono ? "mono" : "" }, value ?? "")
     : h("input", { id, type, placeholder, list, value: value ?? "", class: mono ? "mono" : "" });
@@ -116,6 +145,7 @@ export function field({ label, hint, help, value, onInput, long, type = "text", 
   const verifySoft = () => { warn.textContent = soft ? soft(input.value) || "" : ""; };
   box.append(warn); verifySoft();
   input.addEventListener("input", () => { onInput(input.value, input); if (box.classList.contains("is-bad")) verify(); if (soft) verifySoft(); });
+  if (normalize) input.addEventListener("blur", () => { const nv = normalize(input.value); if (nv !== input.value) { input.value = nv; onInput(nv, input); if (soft) verifySoft(); } });
   if (validate) input.addEventListener("blur", verify);
   return box;
 }

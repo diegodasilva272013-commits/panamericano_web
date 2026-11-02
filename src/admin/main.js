@@ -15,6 +15,7 @@ const DRAFT_KEY = "pm-admin-draft";
 let user = null, draft = null, remoteData = null, lastPub = null, lastPubRaw = null, netBar, isDirty = false, current = store.get("pm-admin-section") || "resumen";
 let saveBtn, discardBtn, statusEl, topEl, sideEl, navEl, goto, redraw, stashTimer, paintTimer, histTimer, baseJson = {};
 let bannerOpen = false; // hay un borrador pendiente esperando que elijas "Recuperar" o "Descartar"
+let stashedOk = false, otherBar, otherSeen = null;
 let undoBtn, redoBtn, errBar, showErrBar = true, histRestored = false; // la barra de errores se muestra siempre que falte algo
 
 /* historial de cambios del borrador: deshacer y rehacer de todo, no solo de lo que se quita */
@@ -152,7 +153,7 @@ function deniedScreen(email) {
 const stashDraft = () => { if (user && draft) store.set(DRAFT_KEY, JSON.stringify({ at: Date.now(), user: user.id, base: lastPubRaw, data: strip(draft) })); };
 const setDirty = () => {
   if (!isDirty) { isDirty = true; paintStatus(); }
-  clearTimeout(stashTimer); stashTimer = setTimeout(stashDraft, 700); // borrador automático en este navegador
+  stashedOk = false; clearTimeout(stashTimer); stashTimer = setTimeout(() => { stashDraft(); stashedOk = true; paintStatus(); }, 700); // borrador automático en este navegador
   clearTimeout(paintTimer); paintTimer = setTimeout(paintStatus, 250);
   clearTimeout(histTimer); histTimer = setTimeout(histPush, 500);
 };
@@ -175,6 +176,7 @@ function paintStatus() {
   const ch = isDirty ? [...changedSections()] : [];
   statusEl.title = ch.map(sectionLabel).join(", ");
   statusEl.textContent = isDirty ? (ch.length > 1 ? `Hay cambios sin publicar en ${ch.length} pantallas` : ch.length ? `Hay cambios sin publicar en ${sectionLabel(ch[0])}` : "Hay cambios sin publicar") : lastPub ? `Publicado ${ago(lastPub)}` : "Todo publicado";
+  if (isDirty && stashedOk) statusEl.append(h("small", { class: "state__saved" }, " · borrador guardado"));
   statusEl.className = "state " + (isDirty ? "is-dirty" : "is-ok");
   saveBtn.disabled = !isDirty;
   saveBtn.title = isDirty ? "Guardar y publicar (Ctrl+S)" : "No hay cambios para publicar";
@@ -183,7 +185,7 @@ function paintStatus() {
   document.querySelector(".side__toggle")?.classList.toggle("has-changes", ch.length > 0);
   paintErrBar();
 }
-const saveLabel = () => saveBtn.replaceChildren(h("span", { class: "lbl-dirty" }, "Guardar y publicar", h("kbd", { class: "kbd-inline" }, "Ctrl S")), h("span", { class: "lbl-clean" }, "Todo publicado"));
+const saveLabel = () => saveBtn.replaceChildren(h("span", { class: "lbl-dirty" }, "Guardar y publicar", h("kbd", { class: "kbd-inline" }, "Ctrl S")), h("span", { class: "lbl-clean" }, "Sin cambios"));
 
 async function publish() {
   if (!commitPendingEdit()) { toast("Hay una hora a medio escribir que no es válida. Corregila (por ejemplo 14:30) o apretá Esc para cerrarla.", "err", 7000); return; } // una hora a medio escribir se confirma antes de publicar
@@ -204,7 +206,7 @@ async function publish() {
       if (e.code !== "CONFLICT") throw e;
       let detail = "";
       try { const cur = await limit(fetchRemote()); const labs = changedLabels(remoteData, cur?.data); detail = ` (${fmtShort(cur.updated_at)}${labs.length ? ": cambió " + labs.join(", ") : ""})`; } catch { /* sin detalle */ }
-      if (!(await confirmBox(`Otra persona publicó cambios mientras editabas${detail}. Si publicás ahora, los reemplazás. ¿Publicar igual?`, "Publicar igual", "Cancelar"))) return;
+      if (!(await confirmBox(`Otra persona publicó cambios mientras editabas${detail}. Si publicás ahora, los reemplazás. ¿Publicar igual?`, "Publicar igual", "Cancelar"))) { toast("No se publicó nada. Tu borrador sigue acá.", "ok", 8000, { label: "Actualizar y ver lo nuevo", icon: "redo", run: () => { stashDraft(); location.reload(); } }); return; }
       at = await saveContent(strip(draft), user.id, null);
     }
     remoteData = strip(draft); lastPub = new Date(at); lastPubRaw = at; computeBase(); histSave(); store.del(DRAFT_KEY); clearTimeout(stashTimer);
@@ -340,7 +342,7 @@ function shell(pending) {
     undoToast("Descartaste los cambios sin publicar.", () => {
       draft = withDefaults(structuredClone(remoteData)); isDirty = false; clearTimeout(stashTimer); store.del(DRAFT_KEY); clearTimeout(histTimer); histPush(); paintStatus(); draw();
     });
-  } }, h("span", { class: "lbl-long" }, "Descartar cambios"), h("span", { class: "lbl-short" }, "Descartar"));
+  } }, "Descartar cambios");
 
   // borrador de una sesión anterior que no se llegó a publicar
   bannerOpen = !!pending;
@@ -354,6 +356,7 @@ function shell(pending) {
   undoBtn = h("button", { type: "button", class: "ico ico--top", title: "Deshacer (Ctrl+Z)", "aria-label": "Deshacer", disabled: true, onclick: () => histGo(-1) }, icon("undo", 18));
   redoBtn = h("button", { type: "button", class: "ico ico--top", title: "Rehacer (Ctrl+Shift+Z)", "aria-label": "Rehacer", disabled: true, onclick: () => histGo(1) }, icon("redo", 18));
   errBar = h("div", { class: "errbar", role: "status", "aria-live": "polite", hidden: true });
+  otherBar = h("div", { class: "netbar netbar--other", role: "status", hidden: true });
   netBar = h("div", { class: "netbar", role: "status", hidden: navigator.onLine !== false }, "Sin conexión. Tus cambios se guardan en este navegador y se publican cuando vuelva internet y toques Guardar.");
   topEl = h("header", { class: "top" }, h("div", { class: "busybar", "aria-hidden": "true" }), statusEl, h("span", { class: "top__undo" }, undoBtn, redoBtn), h("a", { class: "link", href: "/", target: "_blank", rel: "noopener" }, "Ver la web", icon("external", 16)), discardBtn, saveBtn);
   sideEl = h("aside", { class: "side" }, h("div", { class: "livery", "aria-hidden": "true" }),
@@ -369,7 +372,7 @@ function shell(pending) {
           if (isDirty) stashDraft();
           isDirty = false; await signOut(); await boot();
         } }, icon("logout", 17), "Cerrar sesión"))));
-  app.replaceChildren(h("div", { class: "layout" }, sideEl, h("div", { class: "content" }, topEl, netBar, errBar, recover || null, main)));
+  app.replaceChildren(h("div", { class: "layout" }, sideEl, h("div", { class: "content" }, topEl, netBar, otherBar, errBar, recover || null, main)));
   if (!histRestored) histReset();
   histRestored = false; draw(); paintStatus(); paintUndo(); welcome();
 }
@@ -420,6 +423,19 @@ addEventListener("keydown", (e) => {
   } else if (k === "k" && saveBtn?.isConnected && !document.querySelector(".modal")) { e.preventDefault(); palette(); }
 });
 setInterval(() => { if (statusEl?.isConnected && !isDirty) paintStatus(); }, 30000);
+// si otra persona publica mientras tenés el panel abierto, se avisa (se consulta cada minuto)
+setInterval(async () => {
+  if (!statusEl?.isConnected || !lastPubRaw || navigator.onLine === false) return;
+  try {
+    const cur = await limit(fetchRemote());
+    if (cur?.updated_at && cur.updated_at !== lastPubRaw && cur.updated_at !== otherSeen) {
+      otherSeen = cur.updated_at; const labs = changedLabels(remoteData, cur.data);
+      otherBar.hidden = false;
+      otherBar.replaceChildren(h("span", {}, `Otra persona publicó cambios (${fmtShort(cur.updated_at)}${labs.length ? ": " + labs.join(", ") : ""}). Tu borrador sigue acá y se guarda.`),
+        h("button", { type: "button", class: "link", onclick: () => { stashDraft(); location.reload(); } }, "Actualizar y ver lo nuevo"));
+    }
+  } catch { /* sin conexión: se vuelve a intentar */ }
+}, 60000);
 addEventListener("online", () => { if (netBar) netBar.hidden = true; if (document.body.dataset.retry) boot(); });
 addEventListener("offline", () => { if (netBar) netBar.hidden = false; });
 addEventListener("beforeunload", (e) => { if (isDirty) { stashDraft(); e.preventDefault(); e.returnValue = ""; } });
