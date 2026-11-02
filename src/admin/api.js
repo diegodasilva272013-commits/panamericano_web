@@ -110,3 +110,77 @@ export async function removeFrameVersion(version) {
   const { data: rest } = await sb.storage.from(BUCKET_FRAMES).list(version, { limit: 50 });
   if (rest?.length) await sb.storage.from(BUCKET_FRAMES).remove(rest.filter((f) => f.id).map((f) => `${version}/${f.name}`));
 }
+
+/* ---------- reservas (datos vivos: se guardan al instante, no pasan por "Guardar y publicar") ---------- */
+const clean = (q) => String(q).replace(/[^\p{L}\p{N}@+. -]/gu, " ").replace(/\s+/g, " ").trim();
+function resErr(e, what) {
+  if (e?.code === "23P01") { const c = new Error("Ese asiento ya está ocupado en ese tramo."); c.code = "SEAT_TAKEN"; return c; }
+  console.warn("[reservas]", what, e?.message || e);
+  return new Error(`No se pudo ${what}. Revisá tu conexión y probá de nuevo; si sigue igual, avisá a quien administra la web.`);
+}
+// reservas de un día (y opcionalmente de un servicio/horario)
+export async function listReservations({ date, route, time }) {
+  let q = sb.from("reservations").select("*").eq("trip_date", date).order("trip_time").order("seat", { ascending: true }).limit(1000);
+  if (route) q = q.eq("route_id", route); if (time) q = q.eq("trip_time", time);
+  const { data, error } = await q; if (error) throw resErr(error, "leer las reservas");
+  return data || [];
+}
+// buscar por código, nombre, teléfono o documento (todas las fechas, las más nuevas primero)
+export async function searchReservations(text) {
+  const t = clean(text); if (t.length < 2) return [];
+  const { data, error } = await sb.from("reservations").select("*")
+    .or(`code.ilike.%${t}%,passenger_name.ilike.%${t}%,phone.ilike.%${t}%,passenger_doc.ilike.%${t}%`)
+    .order("trip_date", { ascending: false }).limit(80);
+  if (error) throw resErr(error, "buscar");
+  return data || [];
+}
+export async function setReservationStatus(ids, status) {
+  const { error } = await sb.from("reservations").update({ status }).in("id", ids);
+  if (error) throw resErr(error, "cambiar la reserva");
+}
+export async function setReservationNote(id, note) {
+  const { error } = await sb.from("reservations").update({ note: String(note).slice(0, 300) }).eq("id", id);
+  if (error) throw resErr(error, "guardar la nota");
+}
+export async function deleteReservations(ids) {
+  const { error } = await sb.from("reservations").delete().in("id", ids);
+  if (error) throw resErr(error, "borrar la reserva");
+}
+// una reserva cargada a mano (boletería / teléfono): una fila por asiento, mismo código
+export async function addReservation({ route, date, time, from, to, fromName, toName, seats, people, phone, email, fare, status, note }) {
+  const code = "PB-" + Array.from(crypto.getRandomValues(new Uint8Array(6)), (n) => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[n % 32]).join("");
+  const rows = seats.map((seat, i) => ({ code, route_id: route, trip_date: date, trip_time: time, from_idx: from, to_idx: to, from_name: fromName, to_name: toName, seat,
+    passenger_name: people[i].name, passenger_doc: people[i].doc || "", phone: phone || "", email: email || "", fare: fare ?? null, status: status || "confirmada", note: note || "", source: "admin" }));
+  const { error } = await sb.from("reservations").insert(rows);
+  if (error) throw resErr(error, "cargar la reserva");
+  return code;
+}
+export async function listClosed(date) {
+  const { data, error } = await sb.from("closed_trips").select("*").eq("trip_date", date);
+  if (error) throw resErr(error, "leer las salidas cerradas");
+  return data || [];
+}
+export async function closeTrip({ route, date, time, reason }) {
+  const { error } = await sb.from("closed_trips").insert({ route_id: route, trip_date: date, trip_time: time || null, reason: reason || "" });
+  if (error && error.code !== "23505") throw resErr(error, "cerrar la salida");
+}
+export async function openTrip(id) {
+  const { error } = await sb.from("closed_trips").delete().eq("id", id);
+  if (error) throw resErr(error, "reabrir la salida");
+}
+// cuántas reservas vivas hay por día entre dos fechas (para el Resumen y el selector de fecha)
+export async function countByDay(from, to) {
+  const { data, error } = await sb.from("reservations").select("trip_date,code,status").gte("trip_date", from).lte("trip_date", to).neq("status", "cancelada").limit(5000);
+  if (error) throw resErr(error, "contar las reservas");
+  const m = {}; (data || []).forEach((r) => { (m[r.trip_date] ||= new Set()).add(r.code); });
+  return Object.fromEntries(Object.entries(m).map(([d, s]) => [d, s.size]));
+}
+
+// para el Resumen: reservas por confirmar (de hoy en adelante) y reservas de hoy. Si la tabla no existe todavía, avisa que falta activar.
+export async function bookingSummary(today) {
+  const { data, error } = await sb.from("reservations").select("code,status,trip_date").gte("trip_date", today).neq("status", "cancelada").limit(5000);
+  if (error) return { setup: /relation|does not exist|PGRST205|42P01/i.test(`${error.code} ${error.message}`), failed: true };
+  const pend = new Set(), hoy = new Set();
+  (data || []).forEach((r) => { if (r.status === "pendiente") pend.add(r.code); if (String(r.trip_date).slice(0, 10) === today) hoy.add(r.code); });
+  return { pending: pend.size, today: hoy.size };
+}

@@ -42,6 +42,19 @@ Permite editar sin tocar el código: **textos** de toda la web, **horarios y ser
 - **Horarios**: cada servicio tiene su origen, sus paradas y sus horarios, separados por coma. Si una salida solo va ciertos días: `14:15 (mar · jue · vie)`.
 - **Video nuevo para el hero** (*Inicio y hero → Cambiar el video del hero*): subir los videos de cada tramo (MP4 horizontal, 5–12 s), ponerles título y tocar *Generar el hero*. El propio navegador los une con fundido y crea los cuadros (escritorio y celular). Hacerlo desde una compu con **Chrome o Edge** y buena conexión: tarda unos minutos y sube unos 75 MB. Recién cuando se toca *Usar este hero* y *Guardar y publicar* cambia la web. *Borrar versiones anteriores* libera espacio.
 
+### Reservas de asientos
+
+Las reservas son reales: cada asiento ocupado queda guardado en la base y la web lo muestra ocupado a todos.
+
+1. **Una sola vez:** en Supabase > SQL Editor pegá y ejecutá `supabase/booking.sql` (después de `schema.sql`). Se puede volver a ejecutar sin borrar reservas.
+2. En el panel, **Coches y reglas**: armá el plano de asientos de cada coche (filas, asientos por fila, pasillo; tocá un lugar para sacar o poner un asiento) y definí las reglas (máximo de asientos por reserva, hasta cuántos días antes, cuándo se cierra). Si no cargás ninguno rige un coche de 44 asientos.
+3. En **Horarios de salida**, dentro de cada servicio ("Datos del servicio"): elegí el coche, si se puede reservar por la web y las tarifas por parada (el precio desde el origen hasta cada parada; el tramo cuesta la diferencia).
+4. En **Reservas** se ve, por día y por salida, quién reservó cada asiento. Las reservas de la web llegan como *Pendiente*: se confirman, se cancelan (el asiento queda libre) o se borran. También se cargan reservas a mano (teléfono, boletería), se cierra una salida y se busca por código, nombre, teléfono o DNI. **Esta pantalla guarda al instante; no hace falta publicar.** Lo de Coches y reglas sí se publica como el resto.
+
+Cómo está protegido: la web pública solo puede *ver qué asientos están ocupados* (sin datos personales) y *reservar* mediante una función que valida todo en el servidor (asiento que existe, tramo y fecha válidos, salida abierta, máximo de asientos, datos del pasajero, freno si alguien hace demasiadas reservas seguidas). La base impide por sí misma vender dos veces el mismo asiento en el mismo tramo, aunque dos personas aprieten al mismo tiempo. Solo los administradores ven los datos personales de las reservas.
+
+Pruebas de la base: la lógica del SQL se probó contra una base Postgres real (casos de choques de asientos, tramos, permisos y abusos).
+
 ### Límites del plan gratuito de Supabase (importante)
 - **Almacenamiento: 1 GB.** Cada hero nuevo ocupa ~75 MB; borrar las versiones viejas desde el panel.
 - **Tráfico: 5 GB por mes.** Las fotos pesan poco, pero **los cuadros de un hero propio los sirve Supabase**: un visitante que recorre todo el hero baja hasta ~52 MB (escritorio) o ~22 MB (celular). El hero original incluido en el sitio se sirve desde Vercel y no tiene este límite.

@@ -1,10 +1,11 @@
 import { h, field, check, group, groupAside, listEditor, imageField, confirmBox, toast, icon, undoToast, hooks, plainErr } from "./ui.js";
-import { listHistory, withDefaults } from "./api.js";
+import { listHistory, withDefaults, bookingSummary } from "./api.js";
 import { heroVideoTool } from "./hero-video.js";
+import { busesSection, reservationsSection, routeBookingFields, countSeats } from "./reservas.js";
 
 // los datos viejos pueden no tener todas las claves: se comparan ya completados con los valores por defecto
 const normData = (d) => strip(withDefaults(structuredClone(d ?? {})));
-export const KEY2SEC = { hero: "hero", texts: "textos", site: "contacto", routes: "horarios", destinations: "destinos", gallery: "galeria", boardImage: "galeria", services: "galeria", boleterias: "contacto", faq: "contacto" };
+export const KEY2SEC = { hero: "hero", texts: "textos", site: "contacto", routes: "horarios", destinations: "destinos", gallery: "galeria", boardImage: "galeria", services: "galeria", boleterias: "contacto", faq: "contacto", buses: "coches", booking: "coches" };
 const changedIds = (a, b) => { const s = new Set(); for (const k of Object.keys(KEY2SEC)) if (JSON.stringify(a?.[k]) !== JSON.stringify(b?.[k])) s.add(KEY2SEC[k]); return [...s]; };
 const get = (o, path) => path.split(".").reduce((a, k) => (a == null ? a : a[k]), o);
 const set = (o, path, v) => { const ks = path.split("."); const last = ks.pop(); ks.reduce((a, k) => (a[k] ??= {}), o)[last] = v; };
@@ -82,7 +83,7 @@ const TEXT_GROUPS = [
   ["Horarios", "Título y rótulos del tablero de salidas.", [["texts.horarios.a", "Título, primera línea"], ["texts.horarios.b", "Título, segunda línea (gris)"], ["texts.horarios.all", "Subtítulo de \"todas las salidas\""], ["texts.horarios.clock", "Texto junto al reloj"]]],
   ["Destinos", "", [["texts.destinos.a", "Título, primera línea"], ["texts.destinos.b", "Título, segunda línea (gris)"]]],
   ["El viaje (la animación del bus)", "La animación del bus por la Ruta 9.", [["texts.viaje.hint", "Invitación a scrollear"], ["texts.viaje.cta", "Botón del final"]]],
-  ["Reservar un pasaje", "", [["texts.reservar.a", "Título, primera línea"], ["texts.reservar.b", "Título, segunda línea (gris)"], ["texts.reservar.legal", "Aviso legal (debajo del formulario)", true]]],
+  ["Reservar un pasaje", "", [["texts.reservar.a", "Título, primera línea"], ["texts.reservar.b", "Título, segunda línea (gris)"]]],
   ["A bordo", "", [["texts.abordo.a", "Título, primera línea"], ["texts.abordo.b", "Título, segunda línea (gris)"]]],
   ["Antes de viajar", "", [["texts.antes.a", "Título, primera línea"], ["texts.antes.b", "Título, segunda línea (gris)"]]],
   ["Contacto", "", [["texts.contacto.a", "Título, primera línea"], ["texts.contacto.b", "Título, segunda línea (gris)"], ["texts.contacto.call", "Botón de llamar"], ["texts.contacto.wa", "Botón de WhatsApp"], ["texts.contacto.central", "Rótulo del teléfono central"]]],
@@ -426,6 +427,7 @@ function routesSection({ draft, dirty: baseDirty, rerender }) {
             field({ label: "Destino final (se ve en el tablero)", help: "Si no todas las salidas llegan hasta el final, escribí un asterisco al terminar (La Quiaca*) y explicalo en la Nota.", value: r.to, hint: "Podés terminar con * si no todas las salidas llegan hasta ahí.", validate: (v) => (v.trim() ? "" : "Falta el destino final. Escribí a dónde llega, por ejemplo La Quiaca."), onInput: (v) => { r.to = v; dirty(); } }),
             field({ label: "Pueblos del camino (texto del tablero)", help: "Es lo que se lee en el tablero debajo del destino, por ejemplo: Tilcara · Humahuaca. Es solo un texto: las paradas reales se cargan más abajo.", value: r.via, hint: "Opcional. Por ejemplo: Tilcara · Humahuaca.", onInput: (v) => { r.via = v; dirty(); } })),
           stopsEditor(r, dirty),
+          routeBookingFields(r, draft, dirty),
           field({ label: "Nota (se muestra debajo)", long: true, rows: 2, value: r.note, onInput: (v) => { r.note = v; dirty(); } })))),
   });
   board = departuresBoard(routes);
@@ -577,7 +579,20 @@ function summarySection({ draft, goto, lastPublished, published }) {
     : h("p", { class: "empty" }, "Todavía no hay horarios cargados."));
   const more = (label, id, ico) => h("button", { type: "button", class: "morelink", onclick: () => goto(id) }, icon(ico, 18), label, icon("arrow", 16));
   const lp = lastPublished();
+  const resBox = h("div", {}, h("p", { class: "hint" }, "Mirando las reservas…"));
+  if (draft.booking?.enabled !== false) {
+    const hoy = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Jujuy" }).format(new Date());
+    bookingSummary(hoy).then((r) => {
+      if (!resBox.isConnected) return;
+      if (r.failed) resBox.replaceChildren(h("p", { class: r.setup ? "warn" : "hint" }, r.setup ? "Las reservas todavía no están activadas en la base: falta ejecutar el archivo supabase/booking.sql en Supabase (una sola vez). Mientras tanto la web no guarda reservas." : "No se pudieron leer las reservas ahora. Probá de nuevo en un rato."));
+      else resBox.replaceChildren(
+        h("p", { class: r.pending ? "status is-bad" : "okline" }, r.pending ? `${r.pending} ${r.pending === 1 ? "reserva espera" : "reservas esperan"} que las confirmes.` : "No hay reservas por confirmar."),
+        h("p", { class: "hint" }, `${r.today} ${r.today === 1 ? "reserva" : "reservas"} para hoy.`),
+        h("button", { type: "button", class: "morelink", onclick: () => goto("reservas") }, icon("reservas", 18), "Ver las reservas", icon("arrow", 16)));
+    });
+  } else resBox.replaceChildren(h("p", { class: "hint" }, "Las reservas por la web están pausadas (se activan en Coches y reglas)."));
   return h("div", { class: "stack" },
+    group("Reservas", "Lo que pidieron los pasajeros por la web.", resBox),
     group(nd.tomorrow ? "Primeras salidas de mañana" : "Próximas salidas", `Así las ve el pasajero ahora mismo en la web.${nextIn(nd)}`, board),
     group("¿Qué querés hacer?", "", h("div", { class: "actions" },
       h("button", { type: "button", class: "btn btn--primary btn--xl", onclick: () => goto("horarios") }, icon("horarios", 20), "Cambiar un horario"),
@@ -605,6 +620,8 @@ export const SECTIONS = [
   { id: "destinos", label: "Destinos", group: "Viajes", desc: "Los lugares a los que viaja la empresa.", help: ["Elegí la foto con \"Cambiar imagen\": se achica sola.", "Corregí el nombre y la descripción.", "El nombre tiene que ser igual a una parada de Horarios.", "Guardá y publicá."], render: destinationsSection },
   { id: "galeria", label: "Fotos", group: "Contenido", desc: "Fotos de la galería animada y de \"A bordo\".", help: ["Cambiá una foto con \"Cambiar imagen\": se achica sola.", "La galería necesita 6, 9, 12 o 15 fotos.", "Guardá y publicá."], render: together(gallerySection, boardSection) },
   { id: "contacto", label: "Contacto y preguntas", group: "Contenido", desc: "Teléfonos, WhatsApp, boleterías y preguntas frecuentes.", help: ["Corregí el dato que cambió.", "Los números se revisan solos al salir del campo.", "Guardá y publicá."], render: together(contactSection, faqSection) },
+  { id: "reservas", label: "Reservas", group: "Reservas", desc: "Quién reservó cada asiento, por día y por salida.", help: ["Elegí el día y la salida.", "Las reservas nuevas de la web llegan como \"Pendiente\": tocá Confirmar cuando hables con la persona.", "Para reservar por teléfono, tocá los asientos libres del plano y cargá los datos.", "Los cambios de esta pantalla se guardan al instante: no hace falta publicar."], render: reservationsSection },
+  { id: "coches", label: "Coches y reglas", group: "Reservas", desc: "El plano de asientos de cada coche y las reglas de reserva.", help: ["Armá el plano: filas, asientos por fila y pasillo.", "Tocá un lugar del plano para sacar o poner un asiento.", "En Horarios de salida elegís qué coche usa cada servicio.", "Guardá y publicá para que la web use los cambios."], render: busesSection },
   { id: "historial", label: "Versiones anteriores", group: "Avanzado", desc: "Versiones anteriores de la web, por si hay que volver atrás.", help: ["Elegí una versión de la lista.", "Tocá \"Volver a como estaba antes\" y revisalo.", "Si está bien, tocá \"Guardar y publicar\"."], render: historySection },
 ];
 
@@ -614,6 +631,16 @@ export function validate(d) {
   const e = [];
   const add = (sec, msg, extra = {}) => e.push({ sec, msg, ...extra });
   const phoneOk = (s) => /\d{6,}/.test(String(s).replace(/\D/g, ""));
+  const seen = new Set();
+  (d.buses || []).forEach((b, i) => {
+    const n = `Coches · ${b.name?.trim() || "coche " + (i + 1)}`, at = { item: i, list: "buses" };
+    if (!b.name?.trim()) add("coches", `${n}: falta el nombre del coche.`, { ...at, field: "Nombre del coche" });
+    if (!countSeats(b)) add("coches", `${n}: el coche no tiene ningún asiento.`, at);
+    if (seen.has(b.id)) add("coches", `${n}: hay dos coches iguales. Quitá uno.`, at); seen.add(b.id);
+  });
+  const bk = d.booking || {};
+  if (!(bk.maxSeats >= 1 && bk.maxSeats <= 10)) add("coches", "Reservas: los asientos por reserva tienen que ser entre 1 y 10.", { field: "Asientos por reserva (máximo)" });
+  if (!(bk.daysAhead >= 1)) add("coches", "Reservas: falta cuántos días antes se puede reservar.", { field: "Hasta cuántos días antes se reserva" });
   d.routes.forEach((r, i) => {
     const n = `Horarios · ${[r.from?.trim(), r.to?.trim()].filter(Boolean).join(" → ") || "servicio " + (i + 1)}`, at = { item: i, list: "routes" };
     if (!r.from?.trim()) add("horarios", `${n}: falta el origen.`, { ...at, field: "Sale desde" });

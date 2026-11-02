@@ -20,7 +20,7 @@ export function mergeContent(base, over) {
 }
 
 // ---- contenido vivo ----
-export let CONTENT, SITE, TEXTS, HERO, ROUTES, ORIGINS, DESTINATIONS, GALLERY, BOARD_IMAGE, BOLETERIAS, FAQ, SERVICES, JOURNEY;
+export let CONTENT, SITE, TEXTS, HERO, ROUTES, ORIGINS, DESTINATIONS, GALLERY, BOARD_IMAGE, BOLETERIAS, FAQ, SERVICES, JOURNEY, BUSES, BOOKING;
 export let WA_NUMBER, AGENT_ID;
 
 export function setContent(remote) {
@@ -28,7 +28,7 @@ export function setContent(remote) {
   CONTENT = c;
   SITE = c.site; TEXTS = c.texts; HERO = c.hero; ROUTES = c.routes;
   DESTINATIONS = c.destinations; GALLERY = c.gallery; BOARD_IMAGE = c.boardImage;
-  BOLETERIAS = c.boleterias; FAQ = c.faq; SERVICES = c.services; JOURNEY = c.journey;
+  BOLETERIAS = c.boleterias; FAQ = c.faq; SERVICES = c.services; JOURNEY = c.journey; BUSES = c.buses; BOOKING = c.booking;
   WA_NUMBER = c.site.whatsapp; AGENT_ID = c.site.agentId;
   ORIGINS = [...new Set(ROUTES.map((r) => r.from))];
   return c;
@@ -47,3 +47,27 @@ export function search(origin, dest) {
 }
 
 export const short = (n) => ({ "San Salvador de Jujuy": "Jujuy" }[n] || n);
+
+// ---- reservas ----
+// paradas en orden de viaje: 0 = origen del servicio
+export const stopsOf = (r) => [r.from, ...(r.stops || [])];
+// el coche de un servicio (si no tiene uno elegido o fue borrado, el primero)
+export const busFor = (r) => BUSES.find((b) => b.id === r.busId) || BUSES[0];
+// asientos reales del plano (sin pasillos)
+export const seatsOf = (bus) => (bus?.rows || []).flat().filter((s) => s != null && String(s).trim() !== "").map(String);
+const DOWS = ["dom", "lun", "mar", "mie", "jue", "vie", "sab"];
+const noAcc = (x) => String(x).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+// ¿el texto de días ("mar · jue", "lun a vie", vacío = todos) incluye la fecha ISO?
+export function runsOn(txt, iso) {
+  const t = noAcc(txt || ""); if (!t.trim()) return true;
+  const set = new Set(DOWS.filter((d) => new RegExp("(^|[^a-z])" + d).test(t)));
+  for (const m of t.matchAll(/(^|[^a-z])(dom|lun|mar|mie|jue|vie|sab)[a-z]*\s*a\s*(dom|lun|mar|mie|jue|vie|sab)/g)) { let i = DOWS.indexOf(m[2]); const j = DOWS.indexOf(m[3]); for (let k = 0; k < 7; k++) { set.add(DOWS[i]); if (i === j) break; i = (i + 1) % 7; } }
+  if (!set.size) return true;
+  return set.has(DOWS[new Date(iso + "T12:00:00").getDay()]);
+}
+// precio entre dos paradas: la tarifa de cada parada es lo que cuesta desde el origen del servicio
+export function fareBetween(r, from, to) {
+  const f = r.fares || {}, st = stopsOf(r);
+  const a = from === 0 ? 0 : f[st[from]], b = f[st[to]];
+  return typeof a === "number" && typeof b === "number" && b > a ? b - a : null;
+}

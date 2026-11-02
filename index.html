@@ -190,6 +190,7 @@
         </div>
 
         <div class="book__panel" data-step="2" hidden>
+          <p class="book__note" id="b-seats-msg" role="status" hidden></p>
           <div class="seats-wrap">
             <div class="seats" id="b-seats" role="group" aria-label="Mapa de asientos"></div>
             <ul class="seats__legend">
@@ -208,6 +209,7 @@
           <div class="ticket" id="b-ticket"></div>
         </div>
 
+        <p class="book__err" id="b-err" role="alert" hidden></p>
         <div class="book__bar" id="b-bar">
           <p class="book__summary" id="b-summary">Elegí origen, destino y fecha.</p>
           <div class="book__actions">
@@ -215,7 +217,7 @@
             <button class="btn" type="button" id="b-next">Continuar</button>
           </div>
         </div>
-        <p class="book__legal" data-t="reservar.legal">Demo de reserva: la solicitud se confirma con la boletería por WhatsApp. No se realiza ningún cobro y la tarifa se informa al confirmar.</p>
+        <p class="book__legal"></p>
         </div>
         <aside class="book__aside" id="b-aside" aria-label="Tu pasaje"></aside>
       </div>

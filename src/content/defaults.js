@@ -4,6 +4,13 @@
 
 const T = (s) => s.split(" ");
 
+// Plano de asientos de un coche: cada fila es una lista; un número = asiento, null = pasillo.
+// Por defecto: coche de 44 asientos (11 filas de 2 + pasillo + 2).
+const busRows = (filas, izq = 2, der = 2) => Array.from({ length: filas }, (_, i) => {
+  const base = i * (izq + der), n = (k) => String(base + k + 1);
+  return [...Array.from({ length: izq }, (_, k) => n(k)), null, ...Array.from({ length: der }, (_, k) => n(izq + k))];
+});
+
 export const DEFAULT_CONTENT = {
   version: 1,
 
@@ -115,6 +122,18 @@ export const DEFAULT_CONTENT = {
     { name: "La Quiaca", tel: "388 508-7661" },
     { name: "Iruya", tel: "387 571-8801" },
   ],
+
+  // Coches (planos de asientos) y reglas de las reservas. Se editan en el panel: "Coches y reglas".
+  buses: [
+    { id: "coche-44", name: "Coche común · 44 asientos", rows: busRows(11) },
+  ],
+  booking: {
+    enabled: true,          // apagarlo pausa las reservas por la web
+    maxSeats: 6,            // asientos por reserva
+    daysAhead: 60,          // hasta cuántos días antes se puede reservar
+    cutoffMinutes: 30,      // se cierra la reserva esta cantidad de minutos antes de salir
+    legal: "La reserva queda registrada y la boletería la confirma por WhatsApp o teléfono. No se cobra nada por la web: el pago se hace al confirmar.",
+  },
 
   faq: [
     ["¿Salen todos los días?", "Sí. Operamos de lunes a domingo, incluidos feriados. En feriados y Carnaval las frecuencias pueden variar: consultalo antes de viajar."],
