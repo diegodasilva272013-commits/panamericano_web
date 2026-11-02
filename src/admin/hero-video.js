@@ -85,7 +85,7 @@ export function heroVideoTool(ctx) {
             field({ label: "Nombre corto (se ve abajo, en la barra del recorrido)", value: c.rail, placeholder: "Ej. Purmamarca", onInput: (v) => { c.rail = v; } })))));
     });
     const total = S.clips.reduce((a, c, i) => a + c.dur - (i ? S.fade : 0), 0);
-    if (!keepMsg) say(S.clips.length ? `${S.clips.length} tramos · duración total del recorrido: ${fmtT(total)} · ${Math.floor(total * S.fps) + 1} cuadros por formato.` : "");
+    if (!keepMsg) say(S.clips.length ? `${S.clips.length} pasos · duración total del recorrido: ${fmtT(total)}.` : "");
   }
 
   fileIn.addEventListener("change", async () => {
@@ -104,12 +104,12 @@ export function heroVideoTool(ctx) {
     const errs = [];
     if (!CAN_WEBP) errs.push("Este navegador no puede crear las imágenes. Usá Chrome o Edge en una computadora.");
     if (!S.clips.length) errs.push("Agregá al menos un video.");
-    S.clips.forEach((c, i) => { if (!c.title.trim()) errs.push(`Al tramo ${i + 1} le falta el título.`); if (c.dur < S.fade * 2 + 0.5) errs.push(`El tramo ${i + 1} es demasiado corto (mínimo ${(S.fade * 2 + 0.5).toFixed(1)} s).`); });
+    S.clips.forEach((c, i) => { if (!c.title.trim()) errs.push(`Al paso ${i + 1} le falta el título.`); if (c.dur < S.fade * 2 + 0.5) errs.push(`El paso ${i + 1} es demasiado corto (mínimo ${(S.fade * 2 + 0.5).toFixed(1)} s).`); });
     const clips = S.clips, n = clips.length, fps = S.fps, fade = S.fade;
     const starts = []; let acc = 0; clips.forEach((c, i) => { starts.push(acc); acc += c.dur - (i < n - 1 ? fade : 0); });
     const total = starts[n - 1] + clips[n - 1].dur;
     if (total > 150) errs.push("El recorrido total supera los 150 segundos. Acortá los videos.");
-    if (errs.length) { errs.forEach((e) => toast(e, "err", 8000)); return; }
+    if (errs.length) { toast(errs.length > 1 ? `Hay ${errs.length} cosas para arreglar: ${errs.map((e, i) => `${i + 1}) ${e}`).join(" ")}` : errs[0], "err", 14000); return; }
     if (!(await confirmBox(`Se van a generar y subir ${(Math.floor(total * fps) + 1) * 2} imágenes (unos ${Math.round((Math.floor(total * fps) + 1) * 0.16)} MB). Tarda varios minutos: no cierres esta pestaña ni la computadora. ¿Empezar?`, "Empezar"))) return;
 
     S.busy = true; S.cancel = false; cleanBtn.disabled = true; genBtn.disabled = true; cancelBtn.hidden = false; resultBox.replaceChildren(); drawClips(); hooks.repaint?.();

@@ -204,6 +204,27 @@ export const badDays = (txt) => {
   const ok = /^(dom|lun|mar|mie|jue|vie|sab)/, relleno = new Set(["a", "y", "e", "al", "todos", "los", "dias", "dia", "feriado", "feriados", "excepto", "salvo", "sin", "y", "de", "la", "semana", "fin", "fines", "lunes"]);
   return normPlace(txt).replace(/[·,;/()\-]/g, " ").split(/\s+/).filter((w) => w && !ok.test(w) && !relleno.has(w));
 };
+// casillas de días: "lun a vie" <-> {lun,mar,mie,jue,vie}
+const SEMANA = [["lun", "L", "lun"], ["mar", "M", "mar"], ["mie", "X", "mié"], ["jue", "J", "jue"], ["vie", "V", "vie"], ["sab", "S", "sáb"], ["dom", "D", "dom"]];
+const daySet = (txt) => {
+  const t = normPlace(txt), keys = SEMANA.map((x) => x[0]), set = new Set(keys.filter((d) => new RegExp("(^|[^a-z])" + d).test(t)));
+  for (const m of t.matchAll(/\b(dom|lun|mar|mie|jue|vie|sab)\w*\s*a\s*(dom|lun|mar|mie|jue|vie|sab)/g)) { let i = keys.indexOf(m[1]); const j = keys.indexOf(m[2]); for (let k = 0; k < 7; k++) { set.add(keys[i]); if (i === j) break; i = (i + 1) % 7; } }
+  return set.size ? set : new Set(keys);
+};
+const daysText = (set) => {
+  if (set.size === 0 || set.size === 7) return "";
+  const on = SEMANA.map((x) => set.has(x[0])), runs = []; let i = 0;
+  while (i < 7) { if (!on[i]) { i++; continue; } let j = i; while (j + 1 < 7 && on[j + 1]) j++; runs.push([i, j]); i = j + 1; }
+  return runs.map(([a, z]) => (z - a >= 2 ? `${SEMANA[a][2]} a ${SEMANA[z][2]}` : SEMANA.slice(a, z + 1).map((x) => x[2]).join(" · "))).join(" · ");
+};
+function dayChips(input) {
+  const wrap = h("div", { class: "days", role: "group", "aria-label": "Días en que sale" });
+  const paint = () => { const set = daySet(input.value); [...wrap.children].forEach((b, i) => b.setAttribute("aria-pressed", String(set.has(SEMANA[i][0])))); };
+  SEMANA.forEach(([k, l, name]) => wrap.append(h("button", { type: "button", class: "days__d", "aria-label": name, title: name, onclick: () => {
+    const set = daySet(input.value); if (set.has(k)) set.delete(k); else set.add(k);
+    input.value = daysText(set); input.dispatchEvent(new Event("input")); paint(); } }, l)));
+  input.addEventListener("input", paint); paint(); return wrap;
+}
 export function nextDepartures(routes, n = 4) {
   const now = nowMin();
   const todos = routes.flatMap((r) => (r.times || []).map((t) => ({ t, m: +t.slice(0, 2) * 60 + +t.slice(3), r })));
@@ -272,7 +293,7 @@ function timesBoard(r, onChange, others, onDraw) {
     const step = (d) => { const nt = readTime(tIn.value) || t; tIn.value = hhmm(+nt.slice(0, 2) * 60 + +nt.slice(3) + d); pErr.textContent = ""; tIn.focus(); };
     const pop = h("div", { class: "tb__pop", role: "dialog", "aria-label": "Editar salida" },
       h("label", {}, "Hora", tIn),
-      h("div", { class: "tb__step" }, h("button", { type: "button", class: "btn btn--ghost", onclick: () => step(-5) }, "−5 min"), h("button", { type: "button", class: "btn btn--ghost", onclick: () => step(5) }, "+5 min")), h("label", {}, "Días (si no sale todos)", dIn), pErr,
+      h("div", { class: "tb__step" }, h("button", { type: "button", class: "btn btn--ghost", onclick: () => step(-5) }, "−5 min"), h("button", { type: "button", class: "btn btn--ghost", onclick: () => step(5) }, "+5 min")), h("label", {}, "Días (si no sale todos)", dIn), dayChips(dIn), pErr,
       h("div", { class: "tb__popact" },
         h("button", { type: "button", class: "btn btn--primary", onclick: done }, "Listo"),
         h("button", { type: "button", class: "btn btn--ghost", onclick: drop }, icon("x", 16), "Quitar esta hora")));

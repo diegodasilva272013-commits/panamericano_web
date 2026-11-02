@@ -629,7 +629,7 @@ kbd{font:600 11px var(--f-text);padding:3px 7px;border-radius:6px;background:rgb
 .route__stop:hover .route__btns,.route__stop:focus-within .route__btns{opacity:1}
 @media(hover:none){.route__btns{opacity:1}}
 .route__empty{color:rgba(243,239,230,.7);font-size:14px}
-.ico--sm{width:30px;height:30px;color:#f3efe6}
+.ico--sm{width:40px;height:40px;color:#f3efe6}
 .ico--sm:hover:not(:disabled){background:rgba(243,239,230,.14);color:#fff;box-shadow:none}
 .ico--sm.ico--del:hover:not(:disabled){background:var(--red);color:#fff}
 .ico--sm .flip{display:inline-flex;transform:scaleX(-1)}
@@ -649,3 +649,9 @@ kbd{font:600 11px var(--f-text);padding:3px 7px;border-radius:6px;background:rgb
 /* ---- décimo octava tanda ---- */
 .board--aside .board__dest strong{white-space:normal;overflow:visible;text-overflow:clip}
 @media(max-width:900px){.state__saved--bad,.state__saved--video{display:block}}
+
+/* ---- decimo novena tanda: casillas de dias ---- */
+.days{display:flex;gap:6px;margin:6px 0 2px}
+.days__d{flex:1;min-width:0;height:40px;border:1px solid var(--line,rgba(0,0,0,.2));border-radius:10px;background:transparent;font:600 14px/1 inherit;color:inherit;cursor:pointer}
+.days__d[aria-pressed="true"]{background:#111;color:#f3efe6;border-color:#111}
+.days__d:focus-visible{outline:2px solid #111;outline-offset:2px}

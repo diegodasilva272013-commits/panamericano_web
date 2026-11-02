@@ -250,7 +250,7 @@ async function publish() {
     }
     remoteData = sent; lastPub = new Date(at); lastPubRaw = at; if (otherBar) { otherBar.hidden = true; otherSeen = null; } computeBase(); histSave(); clearDraft(); clearTimeout(stashTimer);
     isDirty = false; paintStatus();
-    toast("Publicado. La web ya muestra los cambios.", "ok", 9000, { label: "Volver a la anterior", run: async () => {
+    toast("Publicado. En un minuto lo ves en la web.", "ok", 9000, { label: "Volver a la anterior", run: async () => {
       try { const rows = await listHistory(); if (!rows[0]) return toast("No hay una versión anterior guardada."); draft = withDefaults(rows[0].data); setDirty(); histPush(); redraw(); paintStatus(); toast("Cargaste la versión anterior. Tocá Guardar y publicar para que vuelva a verse en la web."); }
       catch (e) { toast(plain(e), "err", 7000); }
     } });
