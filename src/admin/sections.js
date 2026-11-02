@@ -340,6 +340,39 @@ function timesFold(r, i, dirty, routes) {
       h("summary", {}, h("strong", {}, "Horarios de salida"), sum), board));
 }
 
+/* ---------- la ruta: las paradas como una línea que se arma tocando ---------- */
+function stopsEditor(r, dirty) {
+  const list = h("ol", { class: "route", "aria-label": "Paradas en orden de viaje" });
+  const input = h("input", { type: "text", list: "stops-dl", placeholder: "Agregar una parada (por ejemplo Humahuaca)", "aria-label": "Agregar una parada" });
+  const err = h("small", { class: "err", role: "alert" });
+  const draw = () => {
+    const stops = r.stops || [];
+    list.replaceChildren(...(stops.length ? stops.map((p, i) => h("li", { class: "route__stop" + (i === 0 ? " is-first" : i === stops.length - 1 ? " is-last" : "") },
+      h("span", { class: "route__dot", "aria-hidden": "true" }),
+      h("span", { class: "route__name" }, p),
+      h("span", { class: "route__btns" },
+        h("button", { type: "button", class: "ico ico--sm", "aria-label": `Mover ${p} antes`, title: "Antes", disabled: i === 0, onclick: () => move(i, -1) }, h("span", { class: "flip" }, icon("arrow", 14))),
+        h("button", { type: "button", class: "ico ico--sm", "aria-label": `Mover ${p} después`, title: "Después", disabled: i === stops.length - 1, onclick: () => move(i, 1) }, icon("arrow", 14)),
+        h("button", { type: "button", class: "ico ico--sm ico--del", "aria-label": `Quitar ${p}`, title: "Quitar", onclick: () => undoToast(`Quitaste la parada ${p}.`, () => { r.stops.splice(i, 1); dirty(); draw(); }) }, icon("x", 14)))))
+      : [h("li", { class: "route__empty" }, "Todavía no hay paradas. Agregá la primera abajo.")]));
+    err.textContent = "";
+  };
+  const move = (i, d) => { const j = i + d; if (j < 0 || j >= r.stops.length) return; [r.stops[i], r.stops[j]] = [r.stops[j], r.stops[i]]; dirty(); draw(); };
+  const add = () => {
+    const nuevas = parseStops(input.value); if (!nuevas.length) return;
+    const ya = nuevas.filter((x) => (r.stops || []).some((y) => normPlace(y) === normPlace(x)));
+    r.stops = [...(r.stops || []), ...nuevas.filter((x) => !ya.includes(x))]; input.value = ""; dirty(); draw();
+    if (ya.length) err.textContent = `Ya estaba${ya.length > 1 ? "n" : ""}: ${ya.join(", ")}.`;
+  };
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); add(); } });
+  input.addEventListener("change", add);
+  draw();
+  return h("div", { class: "field" },
+    h("div", { class: "field__lab" }, h("label", {}, "Paradas, en orden de viaje")),
+    list, h("div", { class: "route__add" }, input, h("button", { type: "button", class: "btn btn--ghost", onclick: add }, icon("plus", 16), "Agregar")), err,
+    h("small", { class: "hint" }, "De la salida a la llegada. Con esto funciona el buscador de horarios de la web: escribí una por vez o varias separadas por coma."));
+}
+
 /* ---------- horarios ---------- */
 function routesSection({ draft, dirty: baseDirty, rerender }) {
   const routes = draft.routes;
@@ -362,7 +395,7 @@ function routesSection({ draft, dirty: baseDirty, rerender }) {
             field({ label: "Nombre del servicio", value: r.service, hint: "Por ejemplo: Ruta 9", onInput: (v) => { r.service = v; dirty(); } }),
             field({ label: "Destino final (se ve en el tablero)", help: "Si no todas las salidas llegan hasta el final, escribí un asterisco al terminar (La Quiaca*) y explicalo en la Nota.", value: r.to, hint: "Podés terminar con * si no todas las salidas llegan hasta ahí.", validate: (v) => (v.trim() ? "" : "Falta el destino final. Escribí a dónde llega, por ejemplo La Quiaca."), onInput: (v) => { r.to = v; dirty(); } }),
             field({ label: "Pueblos del camino (texto del tablero)", help: "Es lo que se lee en el tablero debajo del destino, por ejemplo: Tilcara · Humahuaca. Es solo un texto: las paradas reales se cargan más abajo.", value: r.via, hint: "Opcional. Por ejemplo: Tilcara · Humahuaca.", onInput: (v) => { r.via = v; dirty(); } })),
-          field({ label: "Paradas, en orden de viaje", value: stopsToText(r), long: true, rows: 2, hint: "Separadas por coma. Son los lugares a los que se puede viajar con este servicio.", validate: (v) => (parseStops(v).length ? "" : "Agregá al menos una parada."), onInput: (v) => { r.stops = parseStops(v); dirty(); } }),
+          stopsEditor(r, dirty),
           field({ label: "Nota (se muestra debajo)", long: true, rows: 2, value: r.note, onInput: (v) => { r.note = v; dirty(); } })))),
   });
   board = departuresBoard(routes);
@@ -382,7 +415,8 @@ function routesSection({ draft, dirty: baseDirty, rerender }) {
   const bulk = h("details", { class: "adv bulk" }, h("summary", {}, "Correr las salidas de varios servicios a la vez"),
     h("div", { class: "bulk__row" }, from, mins, h("span", {}, "min"),
       h("button", { type: "button", class: "btn btn--ghost", onclick: () => shiftAll(-1) }, "Adelantar"), h("button", { type: "button", class: "btn btn--ghost", onclick: () => shiftAll(1) }, "Atrasar")));
-  return h("div", { class: "stack" }, dl,
+  const stopsDl = h("datalist", { id: "stops-dl" }, placeList(draft).map((p) => h("option", { value: p })));
+  return h("div", { class: "stack" }, dl, stopsDl,
     groupAside("Tus servicios", `${routes.length} servicios, ${routes.reduce((n, r) => n + (r.times?.length || 0), 0)} salidas por día. Buscá el servicio y tocá una hora para cambiarla.`, board.el, h("div", { class: "svc__tools" }, filter, bulk), list));
 }
 

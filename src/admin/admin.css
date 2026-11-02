@@ -616,3 +616,32 @@ kbd{font:600 11px var(--f-text);padding:3px 7px;border-radius:6px;background:rgb
 .side__nav button.is-working::after{content:"";width:8px;height:8px;margin-left:auto;border-radius:50%;background:var(--accent);animation:pulso 1s ease-in-out infinite}
 @keyframes pulso{50%{opacity:.25}}
 @media(prefers-reduced-motion:reduce){.side__nav button.is-working::after{animation:none}}
+
+/* ---- décimo séptima tanda: la ruta como línea (la idea más propia del negocio) ---- */
+.route{list-style:none;display:flex;flex-wrap:wrap;gap:10px 0;padding:14px 16px;border-radius:12px;background:var(--dark);color:#f3efe6}
+.route__stop{position:relative;display:inline-flex;align-items:center;gap:8px;padding-right:8px}
+.route__stop:not(:last-child)::after{content:"";display:block;width:26px;height:3px;margin-left:4px;border-radius:2px;background:linear-gradient(90deg,rgba(243,239,230,.35),rgba(243,239,230,.35))}
+.route__dot{flex:none;width:14px;height:14px;border-radius:50%;background:var(--dark);box-shadow:0 0 0 3px #f3efe6}
+.route__stop.is-first .route__dot{background:var(--accent);box-shadow:0 0 0 3px var(--accent)}
+.route__stop.is-last .route__dot{background:var(--red);box-shadow:0 0 0 3px #f3efe6}
+.route__name{font:700 15px var(--f-display);letter-spacing:-.01em;white-space:nowrap}
+.route__btns{display:inline-flex;gap:2px;opacity:.55;transition:opacity .18s}
+.route__stop:hover .route__btns,.route__stop:focus-within .route__btns{opacity:1}
+@media(hover:none){.route__btns{opacity:1}}
+.route__empty{color:rgba(243,239,230,.7);font-size:14px}
+.ico--sm{width:30px;height:30px;color:#f3efe6}
+.ico--sm:hover:not(:disabled){background:rgba(243,239,230,.14);color:#fff;box-shadow:none}
+.ico--sm.ico--del:hover:not(:disabled){background:var(--red);color:#fff}
+.ico--sm .flip{display:inline-flex;transform:scaleX(-1)}
+.route :focus-visible{outline-color:var(--accent)}
+.route__add{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
+.route__add input{flex:1;min-width:220px;min-height:46px;padding:0 14px;border:1px solid var(--line-2);border-radius:var(--r-sm);background:#fff}
+.route__add input:focus{outline:0;border-color:var(--ink);box-shadow:0 0 0 4px rgba(244,180,0,.4)}
+@media(max-width:900px){.ico--sm{width:40px;height:40px}.route__name{white-space:normal}}
+/* los botones de cada parada van debajo y aparecen al apuntar o enfocar: la línea queda limpia */
+.route{gap:4px 0;padding:18px 20px 8px}
+.route__stop{padding:0 0 34px;gap:8px}
+.route__stop:not(:last-child)::after{width:30px;margin:0 10px 0 6px;background:rgba(243,239,230,.4)}
+.route__btns{position:absolute;left:18px;bottom:0;opacity:0;transition:opacity .18s}
+.route__stop:hover .route__btns,.route__stop:focus-within .route__btns{opacity:1}
+@media(hover:none){.route__btns{opacity:1}}
