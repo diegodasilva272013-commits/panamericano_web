@@ -74,8 +74,10 @@ export async function uploadBlob(bucket, path, blob, contentType) {
 
 // Achica y convierte a WebP antes de subir: un cliente que sube una foto de 6 MB del celular no vuelve lenta la web.
 export async function prepareImage(file, { maxWidth = 1600, quality = 0.82 } = {}) {
-  if (!/^image\//.test(file.type)) throw new Error("El archivo no es una imagen.");
-  const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+  if (!/^image\//.test(file.type)) throw Object.assign(new Error("Ese archivo no es una imagen. Elegí una foto JPG, PNG o WebP."), { noRetry: true });
+  let bmp;
+  try { bmp = await createImageBitmap(file, { imageOrientation: "from-image" }); }
+  catch { throw Object.assign(new Error("Esa imagen no se puede abrir. Probá con una foto JPG, PNG o WebP. Si viene de un iPhone en formato HEIC, pasala a JPG primero."), { noRetry: true }); }
   const scale = Math.min(1, maxWidth / bmp.width);
   const w = Math.round(bmp.width * scale), h = Math.round(bmp.height * scale);
   const c = document.createElement("canvas"); c.width = w; c.height = h;

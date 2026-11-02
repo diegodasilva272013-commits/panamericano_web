@@ -225,7 +225,7 @@ export function imageField({ label, url, onChange, maxWidth = 1600, hint }) {
       const r = await uploadImage(f, { maxWidth });
       set(r.url); onChange(r.url);
       info.textContent = `Listo · se optimizó de ${kb(r.before)} a ${kb(r.after)} (${r.width}×${r.height}).`;
-    } catch (e) { toast(plainErr(e), "err", 9000, { label: "Reintentar", icon: "redo", run: () => { const dt = new DataTransfer(); dt.items.add(f); file.files = dt.files; file.dispatchEvent(new Event("change")); } }); }
+    } catch (e) { toast(plainErr(e), "err", 9000, e.noRetry ? undefined : { label: "Reintentar", icon: "redo", run: () => { const dt = new DataTransfer(); dt.items.add(f); file.files = dt.files; file.dispatchEvent(new Event("change")); } }); }
     finally { btn.disabled = false; btn.textContent = old; file.value = ""; wrap.classList.remove("is-busy"); }
   });
   const btn = h("button", { type: "button", class: "btn btn--ghost", onclick: () => file.click() }, url ? "Cambiar imagen" : "Elegir imagen");
