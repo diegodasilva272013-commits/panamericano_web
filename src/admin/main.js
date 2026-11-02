@@ -398,7 +398,7 @@ function shell(pending) {
       h("div", { class: "side__foot" }, h("small", {}, user.email),
         h("a", { class: "link", href: "/", target: "_blank", rel: "noopener" }, icon("external", 16), "Ver la web"),
         h("button", { type: "button", class: "link", onclick: async () => {
-          if ((isDirty || videoBusy()) && !(await confirmBox(videoBusy() ? "Se está generando el video de la portada. Si salís ahora, se corta y hay que empezar de nuevo. ¿Salir igual?" : "Hay cambios sin publicar. Quedan guardados en este navegador para cuando vuelvas a entrar. ¿Salir igual?", "Salir", "Cancelar", { focusCancel: true }))) return;
+          if ((isDirty || videoHasWork()) && !(await confirmBox(videoBusy() ? "Se está generando el video de la portada. Si salís ahora, se corta y hay que empezar de nuevo. ¿Salir igual?" : isDirty ? "Hay cambios sin publicar. Quedan guardados en este navegador para cuando vuelvas a entrar. ¿Salir igual?" : "Tenés videos cargados en el generador de la portada. Si salís, hay que cargarlos de nuevo. ¿Salir igual?", "Salir", "Cancelar", { focusCancel: true }))) return;
           resetVideo();
           if (isDirty) stashDraft();
           isDirty = false; await signOut(); await boot();
@@ -474,5 +474,5 @@ setInterval(checkOther, 60000);
 addEventListener("visibilitychange", () => { if (!document.hidden) checkOther(); });
 addEventListener("online", () => { if (netBar) netBar.hidden = true; if (document.body.dataset.retry) boot(); });
 addEventListener("offline", () => { if (netBar) netBar.hidden = false; });
-addEventListener("beforeunload", (e) => { if (isDirty || videoBusy()) { if (isDirty) stashDraft(); e.preventDefault(); e.returnValue = ""; } });
+addEventListener("beforeunload", (e) => { if (isDirty || videoHasWork()) { if (isDirty) stashDraft(); e.preventDefault(); e.returnValue = ""; } });
 boot();

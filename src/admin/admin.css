@@ -642,7 +642,7 @@ kbd{font:600 11px var(--f-text);padding:3px 7px;border-radius:6px;background:rgb
 .route{gap:4px 0;padding:18px 20px 8px}
 .route__stop{padding:0 0 34px;gap:8px}
 .route__stop:not(:last-child)::after{width:30px;margin:0 10px 0 6px;background:rgba(243,239,230,.4)}
-.route__btns{position:absolute;left:18px;bottom:0;opacity:0;transition:opacity .18s}
+.route__btns{position:absolute;left:18px;bottom:0;opacity:.6;transition:opacity .18s}
 .route__stop:hover .route__btns,.route__stop:focus-within .route__btns{opacity:1}
 @media(hover:none){.route__btns{opacity:1}}
 

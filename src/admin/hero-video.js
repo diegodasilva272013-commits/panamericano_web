@@ -76,7 +76,7 @@ export function heroVideoTool(ctx) {
           h("span", { class: "item__btns" },
             h("button", { type: "button", class: "ico", disabled: i === 0 || S.busy, onclick: () => move(-1), "aria-label": `Subir el paso ${i + 1}` }, icon("up", 17)),
             h("button", { type: "button", class: "ico", disabled: i === S.clips.length - 1 || S.busy, onclick: () => move(1), "aria-label": `Bajar el paso ${i + 1}` }, icon("down", 17)),
-            h("button", { type: "button", class: "ico ico--del", disabled: S.busy, "aria-label": `Quitar el paso ${i + 1}`, onclick: () => { URL.revokeObjectURL(c.url); S.clips.splice(i, 1); drawClips(); } }, icon("x", 17)))),
+            h("button", { type: "button", class: "ico ico--del", disabled: S.busy, "aria-label": `Quitar el paso ${i + 1}`, onclick: () => { S.clips.splice(i, 1); drawClips(); toast(`Quitaste el paso ${i + 1} (${c.name}).`, "ok", 8000, { label: "Deshacer", run: () => { S.clips.splice(Math.min(i, S.clips.length), 0, c); drawClips(); } }); } }, icon("x", 17)))),
         h("div", { class: "split split--thumb" },
           h("div", { class: "clip__thumb" }, h("img", { src: c.thumb, alt: "" }), h("small", { class: "hint" }, `${fmtT(c.dur)} · ${c.w}×${c.h}`)),
           h("div", { class: "grid3" },

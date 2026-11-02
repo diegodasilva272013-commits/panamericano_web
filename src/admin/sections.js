@@ -199,6 +199,11 @@ const runsToday = (txt, desde = 0) => {
   for (const m of t.matchAll(/\b(dom|lun|mar|mie|jue|vie|sab)\w*\s*a\s*(dom|lun|mar|mie|jue|vie|sab)/g)) { let i = DIAS.indexOf(m[1]); const j = DIAS.indexOf(m[2]); for (let k = 0; k < 7; k++) { set.add(DIAS[i]); if (i === j) break; i = (i + 1) % 7; } }
   return !set.size || set.has(DIAS[(DIAS.indexOf(hoyJ()) + desde) % 7]); // desde = 1: el día de mañana
 };
+// qué palabras de un texto de días no se entienden ("mrt" -> ["mrt"]); vacío = todo bien
+export const badDays = (txt) => {
+  const ok = /^(dom|lun|mar|mie|jue|vie|sab)/, relleno = new Set(["a", "y", "e", "al", "todos", "los", "dias", "dia", "feriado", "feriados", "excepto", "salvo", "sin", "y", "de", "la", "semana", "fin", "fines", "lunes"]);
+  return normPlace(txt).replace(/[·,;/()\-]/g, " ").split(/\s+/).filter((w) => w && !ok.test(w) && !relleno.has(w));
+};
 export function nextDepartures(routes, n = 4) {
   const now = nowMin();
   const todos = routes.flatMap((r) => (r.times || []).map((t) => ({ t, m: +t.slice(0, 2) * 60 + +t.slice(3), r })));
@@ -252,6 +257,7 @@ function timesBoard(r, onChange, others, onDraw) {
     const pErr = h("small", { class: "err", role: "alert" });
     const done = () => {
       const nt = readTime(tIn.value); if (!nt) { pErr.textContent = `No entiendo "${tIn.value}". Escribí una hora como 14:30.`; tIn.focus(); return false; }
+      const malos = badDays(dIn.value); if (malos.length) { pErr.textContent = `No entiendo "${malos.join(" ")}" como día. Escribí por ejemplo: lun a vie, o mar · jue.`; dIn.focus(); return false; }
       const days = { ...(r.days || {}) }; delete days[t];
       const d = dIn.value.replace(/[()]/g, "").trim(); if (d) days[nt] = d;
       r.times[i] = nt; setDays(r, days); open = -1; refocus = nt; changed();
@@ -296,6 +302,7 @@ function timesBoard(r, onChange, others, onDraw) {
       const days = {}; r.times = r.times.map((t) => { const nt = hhmm(+t.slice(0, 2) * 60 + +t.slice(3) + n); if (r.days?.[t]) days[nt] = r.days[t]; return nt; }); setDays(r, days); changed(); }); };
   const daysAll = h("input", { type: "text", placeholder: "ej. lun a vie", "aria-label": "Días en que salen todas las horas" });
   const setAllDays = (txt) => { const d = txt.replace(/[()]/g, "").trim();
+    const malos = badDays(d); if (malos.length) { err.textContent = `No entiendo "${malos.join(" ")}" como día. Escribí por ejemplo: lun a vie, o mar · jue.`; daysAll.focus(); return; }
     undoable(d ? `Todas las salidas ahora van: ${d}.` : "Todas las salidas van todos los días.", () => { const days = {}; if (d) r.times.forEach((t) => { days[t] = d; }); setDays(r, days); changed(); }); };
   const pick = h("select", { "aria-label": "Copiar los horarios de otro servicio" }, h("option", { value: "" }, "Copiar horarios de…"),
     ...others().map((o, k) => h("option", { value: String(k) }, `${o.from || "Origen"} → ${o.to || "Destino"}${o.service ? " · " + o.service : ""}`)));
@@ -591,6 +598,7 @@ export function validate(d) {
     if (!r.from?.trim()) add("horarios", `${n}: falta el origen.`, { ...at, field: "Sale desde" });
     if (!r.to?.trim()) add("horarios", `${n}: falta el destino final.`, { ...at, field: "Destino final" });
     if (!r.stops?.length) add("horarios", `${n}: agregá al menos una parada.`, { ...at, field: "Paradas" });
+    Object.entries(r.days || {}).forEach(([t, d]) => { const m = badDays(d); if (m.length) add("horarios", `${n}: los días de la salida de las ${t} no se entienden ("${m.join(" ")}"). Escribí por ejemplo: lun a vie.`, { ...at, field: "Horarios de salida" }); });
     if (r._bad) add("horarios", `${n}: hay horarios mal escritos (${r._bad.join(", ")}).`, { ...at, field: "Horarios de salida" });
     else if (!r.times?.length) add("horarios", `${n}: agregá al menos un horario.`, { ...at, field: "Horarios de salida" });
   });

@@ -69,6 +69,7 @@ export function undoToast(msg, mutate) {
 // action: { label, run } agrega un botón (por ejemplo "Deshacer")
 export function toast(msg, kind = "ok", ms = 3200, action) {
   if (!toastBox) { toastBox = h("div", { class: "toasts", role: "status", "aria-live": "polite" }); document.body.append(toastBox); }
+  if (kind !== "err" && !action && toastBox.querySelector(".toast--err")) return; // un error pendiente no lo tapa un aviso de "todo bien"
   toastBox.querySelectorAll(".toast").forEach((o) => o.remove()); // un solo aviso a la vez: el nuevo reemplaza al anterior
   const close = () => { t.classList.add("is-out"); setTimeout(() => t.remove(), 300); };
   const t = h("div", { class: `toast toast--${kind}`, title: "Tocá para cerrar", onclick: () => close() }, h("span", {}, msg),
