@@ -23,7 +23,7 @@ Servidor que recibe lo que transmiten los GPS Rinho (UDP o TCP, protocolo TAIP d
 | `server.js`, `store.js`, `index.js` | Servidor UDP/TCP, guardado por lotes en Supabase y arranque. |
 | `sim-device.js`, `sim-route.js`, `simulate.js` | Simulador de un equipo (UDP/TCP, reintentos, memoria) para probar sin el aparato. |
 | `deploy/` | Instalación en el VPS (`install.sh`) y servicio de systemd. |
-| `test/` | 60 pruebas: protocolo, motor, base de datos y servidor de punta a punta. |
+| `test/` | Más de 70 pruebas: protocolo, motor, base de datos, exportación y servidor de punta a punta (UDP, TCP, reintentos, caída de la base, reportes desordenados, reinicio abrupto). |
 
 ## Probarlo en tu computadora (sin VPS, sin equipo)
 

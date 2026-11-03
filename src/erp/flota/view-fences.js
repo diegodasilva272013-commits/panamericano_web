@@ -42,7 +42,7 @@ function mount(page, ctx, F0, pre) {
   const baseColor = (kind) => FENCE_COLOR[kind] || "#f4b400";
 
   // ------------------------------------------------------------------ mapa
-  createFleetMap(mapEl, { base: "claro", zoom: 9 }).then((m) => {
+  createFleetMap(mapEl, { base: "calles", zoom: 9 }).then((m) => {
     if (destroyed || !mapEl.isConnected) { m.destroy(); return; }
     api = m;
     mapEl.parentElement.append(mapTools(api, { onFit: fitAll }));
@@ -214,6 +214,12 @@ function mount(page, ctx, F0, pre) {
     if (line.length > 1) routeLayer = L.layerGroup([L.polyline(line, { color: "#111", weight: 7, opacity: 0.3 }), L.polyline(line, { color: "#f4b400", weight: 4 })]).addTo(api.map);
     else if (line.length === 1) routeLayer = L.layerGroup([L.circleMarker(line[0], { radius: 5, color: "#111", fillColor: "#f4b400", fillOpacity: 1 })]).addTo(api.map);
     if (mode === "line" && line.length) routeLayer.addLayer(L.layerGroup(line.map((p) => L.circleMarker(p, { radius: 3.5, color: "#111", weight: 1.5, fillColor: "#fff", fillOpacity: 1 }))));
+    // las paradas enlazadas, numeradas en el orden del servicio
+    routeDraft?.stops.forEach((s, i) => {
+      const g = F.fenceById.get(s.geofence_id); if (!g) return;
+      const c = g.shape === "polygon" ? g.polygon[0] : [g.lat, g.lng];
+      (routeLayer ||= L.layerGroup().addTo(api.map)).addLayer(L.marker(c, { icon: L.divIcon({ className: "rp-pin-wrap", html: `<span class="rp-pin is-stop">${i + 1}</span>`, iconSize: [28, 28], iconAnchor: [14, 14] }), title: s.name, keyboard: false }));
+    });
   }
 
   function drawRoutePanel(keep) {

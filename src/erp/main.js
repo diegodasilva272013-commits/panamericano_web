@@ -126,7 +126,7 @@ function draw() {
   for (const fn of leave.splice(0)) { try { fn(); } catch (e) { console.warn("[erp] al salir de la pantalla", e); } }
   const params = pre; pre = {};
   let node;
-  try { node = v.render(ctx, params); }
+  try { node = v.render(ctx, params); if (v.group === "Flota" && !ctx.viewUpdate) ctx.viewUpdate = () => {}; } // Flota se actualiza sola: el redibujado general borraría un dibujo o una edición en curso
   catch (e) { console.error(e); node = h("div", { class: "page" }, h("p", { class: "err", role: "alert" }, "No se pudo mostrar esta pantalla. Probá actualizar los datos."), retryBtn()); }
   main.replaceChildren(node);
   sideEl.classList.remove("is-open"); sideEl.querySelector(".side__toggle")?.setAttribute("aria-expanded", "false");

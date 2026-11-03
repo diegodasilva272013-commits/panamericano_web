@@ -148,14 +148,16 @@ export function openReplay(ctx, F, opts = {}) {
     const a = Date.parse(p.event_time), b = Date.parse(q.event_time), f = b > a ? Math.max(0, Math.min(1, (t0 + vt - a) / (b - a))) : 0;
     const lat = p.lat + (q.lat - p.lat) * f, lng = p.lng + (q.lng - p.lng) * f;
     marker?.setLatLng([lat, lng]);
+    const ik = `${p.speed || 0}|${Math.round((p.course || 0) / 10)}|${p.ignition ? 1 : 0}`;
+    if (marker && ik !== iconKey) { iconKey = ik; marker.setIcon(vehicleIcon(api.L, { code: F.vehicleById.get(vehicleId)?.code || "", status: (p.speed || 0) >= 5 ? "moving" : p.ignition ? "idle" : "parked", course: p.course, speed: p.speed })); }
     if (playing && api && !api.map.getBounds().pad(-0.15).contains([lat, lng])) api.map.panTo([lat, lng], { animate: true, duration: 0.4 });
     slider.value = String(Math.round((vt / Math.max(1, t1 - t0)) * 1000));
     clock.textContent = fmtTime(new Date(t0 + vt).toISOString());
-    now.replaceChildren(h("strong", {}, `${p.speed || 0} km/h`), h("span", {}, `${compass(p.course || 0)} · ${p.ignition ? "motor encendido" : "motor apagado"}`));
+    now.replaceChildren(h("strong", {}, `${p.speed || 0} km/h`), h("span", {}, `Rumbo ${compass(p.course || 0)} · ${p.ignition ? "motor encendido" : "motor apagado"}`));
     drawChartFast();
   }
-  let chartImg = null;
-  function drawChartFast() { drawChart(); }
+  let iconKey = "";
+  const drawChartFast = () => drawChart();
   const tick = (ts) => {
     if (!playing) return;
     if (!last) last = ts;

@@ -26,12 +26,12 @@ function mount(page, ctx, F0) {
   const period = input({ label: "Período", options: Object.entries(PERIODS), value: AS.period });
   const kp = h("div", { class: "kpis kpis--sm" }), body = h("div"), foot = h("p", { class: "hint" });
 
-  async function load() {
+  async function load(quiet = false) {
     const seq = ++loadSeq, today = jujuyDay();
     const from = AS.period === "hoy" ? dayStart(today) : new Date(Date.now() - (AS.period === "mes" ? 30 : 7) * 864e5).toISOString();
-    put(body, h("p", { class: "boot" }, "Cargando…"));
+    if (!quiet) put(body, h("p", { class: "boot" }, "Cargando…"));
     try { const r = await fetchAlertsRange(from, dayEnd(today)); if (seq !== loadSeq) return; rows = r; draw(); }
-    catch (e) { if (seq === loadSeq) put(body, h("p", { class: "err", role: "alert" }, plainErr(e))); }
+    catch (e) { if (seq === loadSeq && !quiet) put(body, h("p", { class: "err", role: "alert" }, plainErr(e))); }
   }
 
   const keep = (a) => (!AS.state || (AS.state === "open" ? !a.ack_at : !!a.ack_at)) && (!AS.kind || a.kind === AS.kind) && (!AS.vehicle || a.vehicle_id === AS.vehicle) && (!AS.sev || a.severity === AS.sev);
@@ -65,7 +65,7 @@ function mount(page, ctx, F0) {
     h("button", { class: "btn btn--ghost", type: "button", onclick: () => ctx.go("ajustes-flota", {}) }, icon("ajustes", 18), "Límites y tolerancias")),
     kp, h("section", { class: "panel" }, h("div", { class: "filters" }, state.el, sev.el, kind.el, veh.el, period.el), body, foot));
   // se actualiza sola cada tanto (y al volver a la pestaña) para ver las alertas nuevas
-  const timer = setInterval(() => { if (!document.hidden) load(); }, 20_000);
+  const timer = setInterval(() => { if (!document.hidden && !document.querySelector(".drawer, .modal") && !/^(SELECT|INPUT)$/.test(document.activeElement?.tagName || "")) load(true); }, 20_000);
   ctx.cleanup(() => clearInterval(timer));
   load();
 }

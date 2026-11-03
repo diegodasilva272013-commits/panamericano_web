@@ -116,6 +116,6 @@ function mount(page, ctx, F0) {
   put(page, pageHead("Vehículos y equipos", "Cada coche con su equipo GPS, su estado y los vencimientos de sus documentos.",
     h("button", { type: "button", class: "btn", onclick: () => form(null) }, icon("plus", 18), "Agregar un coche")), body);
   draw();
-  const timer = setInterval(() => { if (!document.hidden && !document.querySelector(".drawer")) { fleet.reload().then(draw).catch(() => {}); } }, 30_000);
+  const timer = setInterval(() => { if (!document.hidden && !document.querySelector(".drawer, .modal")) { fleet.reload().then(draw).catch(() => {}); } }, 30_000);
   ctx.cleanup(() => clearInterval(timer));
 }

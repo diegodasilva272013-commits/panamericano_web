@@ -192,3 +192,11 @@ test("reconstrucción: borra lo derivado en la ventana (eventos, alertas sin ate
   await svc("gps_save", { p: { trips: [{ id: t.id, status: "en_curso", startedAt: "2026-04-06T10:01:00Z" }], stops: [{ tripId: t.id, idx: 0, geofenceId: g.id, name: "T", arrivedAt: "2026-04-06T10:00:00Z", status: "ok" }] } });
   assert.equal((await q(db, `select status from fleet_trips`))[0].status, "en_curso");
 });
+
+test("un administrador puede sacar un equipo de la lista de nuevos (al vincularlo); otros usuarios no", async () => {
+  const { db, svc } = await setup();
+  await svc("gps_unknown", { p: [{ deviceId: "777", sample: ">RCQ", frames: 1 }] });
+  const del = (sub) => as(db, "authenticated", async () => (await db.query(`delete from gps_unknown_devices where device_id = '777' returning 1`)).rowCount, sub);
+  assert.equal(await del(OTHER), 0, "sin permiso de administrador no borra nada");
+  assert.equal(await del(ADMIN), 1);
+});

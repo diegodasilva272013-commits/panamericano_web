@@ -2,11 +2,29 @@ import { h, icon, chip, kpi, table, input, drawer, download, barChart, put, STAT
 import { money, todayJ, addDays, monthStart, monthEnd, fmtDay, fmtDayLong, cashIn, spend, sold, pending, monthly, passengers, toCsv, STATUS, PAY, iso } from "./model.js";
 import { tripsOn, routeName } from "./trips.js";
 import { openBooking } from "./detail.js";
+import { fleet, openAlerts } from "./flota/store.js";
+import { rowsOf } from "./flota/view-live.js";
 
 export const pageHead = (title, desc, ...acts) => h("header", { class: "page__head" }, h("div", {}, h("h1", { class: "title" }, title), desc && h("p", { class: "page__desc" }, desc)), acts.length ? h("div", { class: "page__acts no-print" }, ...acts) : null);
 const norm = (x) => String(x ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 const pct = (a, b) => (b > 0 ? Math.round((a / b) * 100) : 0);
 const bar = (a, b) => h("span", { class: "occ", role: "img", "aria-label": `${a} de ${b} asientos` }, h("span", { class: "occ__fill" + (pct(a, b) >= 90 ? " is-full" : ""), style: `width:${Math.min(100, pct(a, b))}%` }), h("span", { class: "occ__t" }, `${a}/${b}`));
+
+/* Resumen de la flota en el Inicio: aparece solo si la flota está activada y hay coches cargados (si no, no molesta). */
+function flotaPanel(ctx) {
+  const box = h("section", { class: "panel panel--flota", hidden: true });
+  fleet.ensure().then((F) => {
+    if (!box.isConnected || !F.vehicles.length) return;
+    const rows = rowsOf(F), n = (k) => rows.filter((r) => r.status === k).length, al = openAlerts(F), crit = al.filter((a) => a.severity === "critica").length;
+    const enCurso = F.trips.filter((t) => t.status === "en_curso").length;
+    const k = (l, v, tone = "") => h("span", { class: "fk" + (tone ? " fk--" + tone : "") }, h("b", {}, String(v)), l);
+    put(box, h("div", { class: "panel__top" }, h("h2", {}, "Flota ahora"), h("button", { type: "button", class: "btn btn--ghost btn--sm", onclick: () => ctx.go("mapa", {}) }, icon("mapa", 16), "Abrir el mapa")),
+      h("div", { class: "fks" }, k("en marcha", n("moving"), "ok"), k("detenidos", n("idle") + n("parked")), k("sin señal", n("offline"), n("offline") ? "bad" : ""), k("viajes en curso", enCurso),
+        h("button", { type: "button", class: "fk fk--btn" + (al.length ? " fk--bad" : ""), onclick: () => ctx.go("alertas", {}) }, h("b", {}, String(al.length)), crit ? `alertas sin atender (${crit} críticas)` : al.length === 1 ? "alerta sin atender" : "alertas sin atender")));
+    box.hidden = false;
+  }).catch(() => { /* flota sin activar: el Inicio queda como siempre */ });
+  return box;
+}
 
 /* =========================================================== INICIO */
 export function inicio(ctx) {
@@ -42,6 +60,7 @@ export function inicio(ctx) {
       kpi({ label: "Cobrado este mes", value: money(cobrado), sub: `vendido: ${money(vendido.total)}`, go: () => ctx.go("finanzas", {}) }),
       kpi({ label: "Gastos del mes", value: money(gastos), go: () => ctx.go("gastos", {}) }),
       kpi({ label: "Resultado del mes", value: money(resultado), sub: "cobrado menos gastos", tone: resultado < 0 ? "bad" : resultado > 0 ? "ok" : "", go: () => ctx.go("finanzas", {}) })),
+    flotaPanel(ctx),
     h("div", { class: "cols" },
       h("section", { class: "panel" }, h("h2", {}, "Para resolver"), todo.length
         ? h("div", { class: "lines" }, todo.map((x) => h("button", { type: "button", class: "line", onclick: () => ctx.open(x.b.code) },

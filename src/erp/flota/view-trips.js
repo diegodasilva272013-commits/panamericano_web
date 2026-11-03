@@ -28,10 +28,11 @@ function mount(page, ctx, F, pre) {
   const go = (n) => { VS.date = addDays(VS.date, n); dateIn.value = VS.date; load(); };
   const vehicles = () => fleet.get().vehicles.filter((v) => v.active !== false);
 
-  async function load() {
-    const my = ++seq; put(body, h("p", { class: "boot" }, "Cargando…"));
+  // quiet = actualización automática: no se vacía la tabla ni se pisa lo que el usuario está tocando
+  async function load(quiet = false) {
+    const my = ++seq; if (!quiet) put(body, h("p", { class: "boot" }, "Cargando…"));
     try { const d = await fetchTripsOn(VS.date); if (my !== seq) return; day = d; draw(); if (pre.open) { const t = day.trips.find((x) => x.id === pre.open); pre = {}; if (t) detail(t); } }
-    catch (e) { if (my === seq) put(body, h("p", { class: "err", role: "alert" }, plainErr(e))); }
+    catch (e) { if (my === seq && !quiet) put(body, h("p", { class: "err", role: "alert" }, plainErr(e))); }
   }
 
   function draw() {
@@ -102,7 +103,8 @@ function mount(page, ctx, F, pre) {
   put(page, pageHead("Viajes", "Cada salida del día con su coche, y cómo viene: cuándo salió, dónde frenó y si hay atrasos.",
     h("div", { class: "datebar no-print" }, h("button", { type: "button", class: "ico", "aria-label": "Día anterior", onclick: () => go(-1) }, h("span", { class: "flip" }, icon("arrow", 20))), dateIn,
       h("button", { type: "button", class: "ico", "aria-label": "Día siguiente", onclick: () => go(1) }, icon("arrow", 20)), h("button", { type: "button", class: "btn btn--ghost btn--sm", onclick: () => { VS.date = jujuyDay(); dateIn.value = VS.date; load(); } }, "Hoy"))), body);
-  const timer = setInterval(() => { if (!document.hidden && !document.querySelector(".drawer")) load(); }, 20_000);
+  const busy = () => document.hidden || document.querySelector(".drawer, .modal") || /^(SELECT|INPUT)$/.test(document.activeElement?.tagName || "");
+  const timer = setInterval(() => { if (!busy()) load(true); }, 20_000);
   ctx.cleanup(() => clearInterval(timer));
   load();
 }

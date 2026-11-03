@@ -66,7 +66,7 @@ export const SEVERITY = { info: { label: "Información", tone: "off" }, aviso: {
 export const TRIP_STATUS = { programado: { label: "Programado", tone: "off" }, en_curso: { label: "En curso", tone: "warn" }, completado: { label: "Completado", tone: "ok" }, cancelado: { label: "Cancelado", tone: "off" } };
 export const STOP_STATUS = { pendiente: { label: "Pendiente", tone: "off" }, ok: { label: "Frenó", tone: "ok" }, omitida: { label: "No frenó", tone: "bad" } };
 export const FENCE_KINDS = { parada: "Parada", terminal: "Terminal", zona: "Zona con límite de velocidad", restringida: "Zona prohibida" };
-export const FENCE_COLOR = { parada: "#f4b400", terminal: "#ffffff", zona: "#3b82f6", restringida: "#ef4444" };
+export const FENCE_COLOR = { parada: "#f4b400", terminal: "#0ea5e9", zona: "#8b5cf6", restringida: "#ef4444" };
 
 /** Fecha y hora cortas en horario de Jujuy. */
 const FMT = new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Jujuy", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });

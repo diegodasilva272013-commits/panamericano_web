@@ -5,11 +5,19 @@ import { FENCE_COLOR } from "./status.js";
 let LP = null;
 export const loadLeaflet = () => (LP ??= Promise.all([import("leaflet"), import("leaflet/dist/leaflet.css")]).then(([m]) => m.default || m));
 
-export const BASES = {
-  oscuro: { label: "Oscuro", url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", sub: "abcd", attr: "© OpenStreetMap · © CARTO", max: 19 },
-  claro: { label: "Claro", url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", sub: "abcd", attr: "© OpenStreetMap · © CARTO", max: 19 },
+// Mapas base. Sin ninguna clave se usa OpenStreetMap (calles y una versión oscura con filtro) y Esri (satélite).
+// Para un mapa de mayor calidad (estilo oscuro propio, más rápido, sin límites de uso informal) se puede cargar una clave gratuita de MapTiler
+// en la variable VITE_MAPTILER_KEY: pasa a usarse sola.
+const MT = import.meta.env?.VITE_MAPTILER_KEY;
+const OSM = { url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png", sub: "abc", attr: "© OpenStreetMap", max: 19 };
+export const BASES = MT ? {
+  oscuro: { label: "Oscuro", url: `https://api.maptiler.com/maps/dataviz-dark/{z}/{x}/{y}.png?key=${MT}`, sub: "", attr: "© MapTiler © OpenStreetMap", max: 19 },
+  calles: { label: "Calles", url: `https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=${MT}`, sub: "", attr: "© MapTiler © OpenStreetMap", max: 19 },
+  satelite: { label: "Satélite", url: `https://api.maptiler.com/maps/satellite/{z}/{x}/{y}.jpg?key=${MT}`, sub: "", attr: "© MapTiler © OpenStreetMap", max: 19 },
+} : {
+  oscuro: { label: "Oscuro", ...OSM, filtered: true },
+  calles: { label: "Calles", ...OSM },
   satelite: { label: "Satélite", url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", sub: "", attr: "Imágenes © Esri, Maxar, Earthstar Geographics", max: 18 },
-  calles: { label: "Calles", url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png", sub: "abc", attr: "© OpenStreetMap", max: 19 },
 };
 export const JUJUY = [-23.6, -65.4];
 
@@ -43,8 +51,11 @@ export async function createFleetMap(el, { base = "oscuro", onSelect, center = J
   const fenceLayer = L.layerGroup(), routeLayer = L.layerGroup();
   let fenceOn = false;
 
+  // las etiquetas se simplifican al alejar el mapa: lejos, solo los puntos; a media distancia, el nombre; cerca, nombre y velocidad
+  const detail = () => { const z = map.getZoom(); el.dataset.zoomLevel = z < 9 ? "far" : z < 12 ? "mid" : "near"; };
   map.on("zoomstart", () => el.classList.add("is-zooming"));
-  map.on("zoomend", () => el.classList.remove("is-zooming"));
+  map.on("zoomend", () => { el.classList.remove("is-zooming"); detail(); });
+  detail();
   map.on("dragstart", () => { following = null; });
 
   const api = {
@@ -89,6 +100,12 @@ export async function createFleetMap(el, { base = "oscuro", onSelect, center = J
         layer.bindTooltip(g.name, { sticky: true, direction: "top", className: "fence-tip" });
         if (onClick) layer.on("click", () => onClick(g));
         fenceLayer.addLayer(layer);
+        // un punto que se ve a cualquier zoom (el círculo de una parada de 140 m es invisible al alejar el mapa)
+        const c = g.shape === "polygon" ? g.polygon.reduce((a, p) => [a[0] + p[0] / g.polygon.length, a[1] + p[1] / g.polygon.length], [0, 0]) : [g.lat, g.lng];
+        const dot = L.circleMarker(c, { radius: 6, color: "#0b0b0a", weight: 2, fillColor: color, fillOpacity: 1, opacity: 0.9 });
+        dot.bindTooltip(g.name, { sticky: true, direction: "top", className: "fence-tip" });
+        if (onClick) dot.on("click", () => onClick(g));
+        fenceLayer.addLayer(dot);
       }
       fenceLayer.addTo(map);
     },

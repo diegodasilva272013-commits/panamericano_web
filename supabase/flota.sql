@@ -406,8 +406,11 @@ create table if not exists public.gps_unknown_devices (
 alter table public.gps_unknown_devices enable row level security;
 drop policy if exists "admin ve gps_unknown_devices" on public.gps_unknown_devices;
 create policy "admin ve gps_unknown_devices" on public.gps_unknown_devices for select to authenticated using (public.is_admin());
+-- al vincular un equipo a un coche, el panel lo saca de la lista de equipos nuevos
+drop policy if exists "admin borra gps_unknown_devices" on public.gps_unknown_devices;
+create policy "admin borra gps_unknown_devices" on public.gps_unknown_devices for delete to authenticated using (public.is_admin());
 revoke all on public.gps_unknown_devices from anon;
-grant select on public.gps_unknown_devices to authenticated;
+grant select, delete on public.gps_unknown_devices to authenticated;
 create or replace function public.gps_unknown(p jsonb) returns void language sql security definer set search_path = public as
 $$
   insert into gps_unknown_devices (device_id, sample, frames)

@@ -105,6 +105,22 @@ El pasajero reserva, elige cómo pagar y la reserva se confirma sola cuando entr
 
 Los botones de pago aparecen solos en la web cuando hay al menos un medio de pago configurado; si no, la reserva sigue como antes (se confirma por WhatsApp o teléfono).
 
+### Flota (GPS): mapa en vivo, viajes, alertas y reportes (`/erp` → Flota)
+Los equipos GPS **Rinho** transmiten a un servidor propio (un VPS, no Vercel, porque Vercel no recibe UDP/TCP). Ese servidor guarda en Supabase y calcula viajes, paradas, sentido, velocidad y atrasos; el ERP lo muestra. Todo el detalle (instalación del VPS, configuración de cada equipo, qué vigilar con el primer equipo real) está en [`gps-server/README.md`](gps-server/README.md).
+
+Orden de instalación:
+1. En Supabase → SQL Editor, ejecutar `supabase/flota.sql` (después de los otros archivos; se puede volver a ejecutar sin perder datos).
+2. En el VPS, instalar el receptor con `gps-server/deploy/install.sh` y completar su `.env` con la clave de servicio **nueva** (nunca en el repositorio).
+3. En `/erp` → Flota → **Vehículos**: cargar cada coche con el IMEI de su equipo. Los equipos que transmiten sin estar cargados aparecen solos para vincularlos.
+4. **Geocercas y recorridos**: dibujar las paradas y terminales, y enlazar cada servicio de la web con sus paradas y su trazado.
+5. **Viajes**: asignar un coche a cada salida del día. Con eso el sistema sigue cada viaje solo.
+
+Probar sin equipo: `npm run test:gps` corre el receptor completo contra un Postgres en memoria con un simulador de equipo, y `node gps-server/simulate.js --port 4031` manda un recorrido por la red a un receptor que estés corriendo.
+
+**Mapa:** usa OpenStreetMap (sin clave) y Esri para satélite. Para un mapa de mejor calidad y sin límites informales de uso, cargar una clave gratuita de MapTiler en la variable `VITE_MAPTILER_KEY` de Vercel.
+
+**Espacio en Supabase:** 30 coches reportando cada 5 a 10 segundos son cientos de miles de filas por día. Por defecto se guarda el detalle 30 días (Flota → Límites y tolerancias) y se conservan para siempre los viajes, paradas, eventos y alertas. Con 30 coches conviene el plan Pro de Supabase.
+
 ### Límites del plan gratuito de Supabase (importante)
 - **Almacenamiento: 1 GB.** Cada hero nuevo ocupa ~75 MB; borrar las versiones viejas desde el panel.
 - **Tráfico: 5 GB por mes.** Las fotos pesan poco, pero **los cuadros de un hero propio los sirve Supabase**: un visitante que recorre todo el hero baja hasta ~52 MB (escritorio) o ~22 MB (celular). El hero original incluido en el sitio se sirve desde Vercel y no tiene este límite.

@@ -73,6 +73,8 @@ const ICONS = {
   calendario: '<rect x="4" y="5.5" width="16" height="14" rx="3"/><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4"/>',
   ajustes: '<circle cx="12" cy="12" r="2.8"/><path d="M12 3.5v2.4M12 18.1v2.4M3.5 12h2.4M18.1 12h2.4M6 6l1.7 1.7M16.3 16.3 18 18M6 18l1.7-1.7M16.3 7.7 18 6"/>',
   ojo: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/>',
+  regla: '<path d="M3.5 16.5 16.5 3.5l4 4-13 13zM7 13l2.2 2.2M10 10l2.2 2.2M13 7l2.2 2.2"/>',
+  cerca: '<circle cx="12" cy="12" r="2.6"/><circle cx="12" cy="12" r="8" stroke-dasharray="2.4 3"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2"/>',
 };
 export const icon = (name, size = 20) =>
   h("span", { class: "i", "aria-hidden": "true", html: `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] || ""}</svg>` });
