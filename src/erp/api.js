@@ -55,6 +55,7 @@ export async function deletePayment(id) {
 }
 export async function saveExpense(e) {
   const row = { spent_at: e.spent_at, category: e.category, amount: e.amount, description: e.description || "", supplier: e.supplier || "", method: e.method, bus_id: e.bus_id || null, route_id: e.route_id || null };
+  if (e.vehicle_id !== undefined) row.vehicle_id = e.vehicle_id || null; // solo si la flota está activada (la columna la crea flota.sql)
   const q = e.id ? sb.from("expenses").update(row).eq("id", e.id) : sb.from("expenses").insert(row);
   const { data, error } = await q.select("*").limit(1);
   if (error) throw fail(error);

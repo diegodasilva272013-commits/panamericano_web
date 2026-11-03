@@ -4,6 +4,7 @@ import { money, r2, todayJ, addDays, addMonths, monthStart, monthEnd, fmtDay, fm
 import { routeName } from "./trips.js";
 import { saveExpense, deleteExpense } from "./api.js";
 import { pageHead } from "./views-ops.js";
+import { fleet } from "./flota/store.js";
 
 const norm = (x) => String(x ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 const daysBetween = (a, b) => Math.round((new Date(b + "T12:00:00Z") - new Date(a + "T12:00:00Z")) / 864e5);
@@ -121,7 +122,11 @@ export function gastos(ctx) {
       sup: input({ label: "Proveedor (opcional)", value: e?.supplier || "", max: 80 }),
       bus: input({ label: "Coche (opcional)", options: [["", "Ninguno"], ...d.content.buses.map((b) => [b.id, b.name])], value: e?.bus_id || "" }),
       route: input({ label: "Servicio (opcional)", options: [["", "Ninguno"], ...d.content.routes.map((r) => [r.id, routeName(d.content, r.id)])], value: e?.route_id || "" }),
+      veh: input({ label: "Coche con GPS (opcional)", options: [["", "Ninguno"]], value: e?.vehicle_id || "", cls: "full", hint: "Para ver cuánto gasta cada coche en Flota → Reportes." }),
     };
+    f.veh.el.hidden = true; // aparece solo si la flota está activada y hay coches cargados
+    let vehOn = false;
+    fleet.ensure().then((F) => { if (!F.vehicles.length) return; vehOn = true; f.veh.input.replaceChildren(...[["", "Ninguno"], ...F.vehicles.map((v) => [v.id, v.code + (v.plate ? ` · ${v.plate}` : "")])].map(([v, t]) => Object.assign(document.createElement("option"), { value: v, textContent: t, selected: String(v) === String(e?.vehicle_id || "") }))); f.veh.el.hidden = false; }).catch(() => {});
     let busy = false;
     const submit = async (ev) => {
       ev.preventDefault(); if (busy) return;
@@ -131,7 +136,7 @@ export function gastos(ctx) {
       if (f.date.get() > today) return f.date.error("La fecha no puede ser futura.");
       busy = true; save.disabled = true;
       try {
-        const row = await saveExpense({ id: e?.id, spent_at: f.date.get(), category: f.cat.get(), amount, description: f.desc.get().trim(), supplier: f.sup.get().trim(), method: f.method.get(), bus_id: f.bus.get(), route_id: f.route.get() });
+        const row = await saveExpense({ id: e?.id, spent_at: f.date.get(), category: f.cat.get(), amount, description: f.desc.get().trim(), supplier: f.sup.get().trim(), method: f.method.get(), bus_id: f.bus.get(), route_id: f.route.get(), ...(vehOn ? { vehicle_id: f.veh.get() } : {}) });
         await ctx.reload(); dr.close(); toast(isNew ? `Gasto de ${money(amount)} cargado.` : "Gasto actualizado.", "ok", 4000);
         if (!inRange(row.spent_at, GS.month, monthEnd(GS.month))) { GS.month = monthStart(row.spent_at); ctx.redraw(); }
       } catch (x) { toast(plainErr(x), "err", 9000); busy = false; save.disabled = false; }
@@ -142,7 +147,7 @@ export function gastos(ctx) {
       try { await deleteExpense(e.id); await ctx.reload(); dr.close(); toast("Gasto borrado.", "ok", 4000); } catch (x) { toast(plainErr(x), "err", 9000); }
     } }, icon("trash", 18), "Borrar");
     const fm = h("form", { class: "payform payform--flat", onsubmit: submit, novalidate: true },
-      h("div", { class: "grid2" }, f.date.el, f.cat.el), h("div", { class: "grid2" }, f.amount.el, f.method.el), f.desc.el, h("div", { class: "grid2" }, f.sup.el, f.bus.el), f.route.el,
+      h("div", { class: "grid2" }, f.date.el, f.cat.el), h("div", { class: "grid2" }, f.amount.el, f.method.el), f.desc.el, h("div", { class: "grid2" }, f.sup.el, f.bus.el), f.route.el, f.veh.el,
       h("div", { class: "payform__act" }, del, save));
     const dr = drawer({ title: isNew ? "Cargar un gasto" : "Gasto", sub: isNew ? "Combustible, peajes, sueldos, arreglos…" : fmtDay(e.spent_at), body: fm });
     f.amount.input.focus();

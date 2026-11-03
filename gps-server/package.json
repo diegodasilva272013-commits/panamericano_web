@@ -1,0 +1,16 @@
+{
+  "name": "panamericano-gps-server",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Receptor de los GPS Rinho (UDP/TCP) de Panamericano de Jujuy. Corre en un VPS, no en Vercel.",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node index.js",
+    "simulate": "node simulate.js",
+    "test": "node --test \"test/*.test.mjs\""
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.118.0"
+  }
+}

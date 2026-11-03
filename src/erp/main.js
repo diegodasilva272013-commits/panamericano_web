@@ -5,6 +5,15 @@ import { routeName } from "./trips.js";
 import { openBooking } from "./detail.js";
 import { inicio, reservas, salidas, pasajeros } from "./views-ops.js";
 import { cobros, gastos, finanzas } from "./views-money.js";
+import { mapa } from "./flota/view-live.js";
+import { viajes } from "./flota/view-trips.js";
+import { alertas } from "./flota/view-alerts.js";
+import { geocercas } from "./flota/view-fences.js";
+import { vehiculos } from "./flota/view-vehicles.js";
+import { reportes } from "./flota/view-reports.js";
+import { ajustesFlota } from "./flota/view-settings.js";
+import { fleet, openAlerts } from "./flota/store.js";
+import { fetchOpenAlerts } from "./flota/data.js";
 
 const app = document.getElementById("app");
 const VIEWS = [
@@ -15,11 +24,18 @@ const VIEWS = [
   { id: "cobros", label: "Cobros", icon: "coin", group: "Dinero", render: cobros, badge: "porcobrar" },
   { id: "gastos", label: "Gastos", icon: "receipt", group: "Dinero", render: gastos },
   { id: "finanzas", label: "Finanzas", icon: "chart", group: "Dinero", render: finanzas },
+  { id: "mapa", label: "Mapa en vivo", icon: "mapa", group: "Flota", render: mapa },
+  { id: "viajes", label: "Viajes", icon: "ruta", group: "Flota", render: viajes },
+  { id: "alertas", label: "Alertas", icon: "campana", group: "Flota", render: alertas, badge: "alertas" },
+  { id: "geocercas", label: "Geocercas y recorridos", icon: "geocerca", group: "Flota", render: geocercas },
+  { id: "vehiculos", label: "Vehículos y equipos", icon: "bus", group: "Flota", render: vehiculos },
+  { id: "reportes", label: "Reportes", icon: "reporte", group: "Flota", render: reportes },
+  { id: "ajustes-flota", label: "Límites y tolerancias", icon: "ajustes", group: "Flota", render: ajustesFlota },
 ];
 const mark = '<svg viewBox="0 0 24 24" width="26" height="26"><rect width="24" height="24" rx="7" fill="#f4b400"/><path d="M2 18c7 1 14-3 20-11v5C16 19 9 22 2 21z" fill="#171200"/><path d="M2 21c7 1 14-3 20-11" stroke="#d8261f" stroke-width="2.2" fill="none"/></svg>';
 const brand = () => h("div", { class: "brand", html: mark + "<span>Panamericano</span>" });
 
-let user = null, D = null, BK = [], loadedAt = 0, current = "inicio", pre = {}, main, navEl, sideEl, stampEl, loading = null, timer = null;
+let user = null, D = null, BK = [], loadedAt = 0, current = "inicio", pre = {}, main, navEl, sideEl, stampEl, loading = null, timer = null, leave = [], fleetTimer = null;
 
 /* ---------- datos ---------- */
 const compute = () => { BK = bookings(D.res, D.pay); };
@@ -40,6 +56,8 @@ const ctx = {
   go: (id, params = {}) => { pre = params; if (location.hash === "#/" + id) draw(); else location.hash = "#/" + id; },
   open: (code, opts) => openBooking(ctx, code, opts), reload, redraw: () => draw(),
   viewUpdate: null, redrawDrawer: null, onDrawerClose: () => { ctx.redrawDrawer = null; },
+  // lo que una pantalla necesita soltar al irse (temporizadores, mapas, conexiones en vivo)
+  cleanup: (fn) => { leave.push(fn); },
   // cobros que apuntan a una reserva que ya no existe (alguien la borró a mano): se avisan, no se pierden
   alerts: () => {
     const o = orphanPayments(D.res, D.pay).filter((p) => p.paid_at >= addDays(D.since, 62));
@@ -74,8 +92,8 @@ const retry = () => h("button", { class: "btn btn--primary", type: "button", onc
 /* ---------- armazón ---------- */
 function badges() {
   if (!navEl) return;
-  const n = { pendientes: BK.filter((b) => b.status === "pendiente" && b.date >= todayJ()).length, porcobrar: pending(BK).length };
-  VIEWS.forEach((v) => { const b = navEl.querySelector(`[data-id="${v.id}"] .nav__n`); if (!b) return; const c = n[v.badge] || 0; b.textContent = c > 99 ? "99+" : String(c); b.hidden = !c; b.title = v.badge === "pendientes" ? "Reservas por confirmar" : "Reservas con saldo por cobrar"; });
+  const n = { pendientes: BK.filter((b) => b.status === "pendiente" && b.date >= todayJ()).length, porcobrar: pending(BK).length, alertas: openAlerts().length };
+  VIEWS.forEach((v) => { const b = navEl.querySelector(`[data-id="${v.id}"] .nav__n`); if (!b) return; const c = n[v.badge] || 0; b.textContent = c > 99 ? "99+" : String(c); b.hidden = !c; b.title = v.badge === "pendientes" ? "Reservas por confirmar" : v.badge === "alertas" ? "Alertas de la flota sin atender" : "Reservas con saldo por cobrar"; });
 }
 const stamp = () => { if (stampEl) stampEl.textContent = "Actualizado " + new Intl.DateTimeFormat("es-AR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Argentina/Jujuy" }).format(loadedAt); };
 
@@ -94,7 +112,7 @@ function shell() {
     h("div", { class: "side__body" }, navEl,
       h("div", { class: "side__foot" }, h("small", {}, user.email),
         h("a", { class: "link", href: "/admin" }, icon("external", 16), "Editar la web"),
-        h("button", { type: "button", class: "link", onclick: async () => { await signOut(); user = null; clearInterval(timer); await boot(); } }, icon("logout", 17), "Cerrar sesión"))));
+        h("button", { type: "button", class: "link", onclick: async () => { await signOut(); user = null; clearInterval(timer); clearInterval(fleetTimer); fleet.clear(); await boot(); } }, icon("logout", 17), "Cerrar sesión"))));
   app.replaceChildren(h("div", { class: "layout erp" }, h("a", { class: "skip", href: "#main" }, "Saltar al contenido"), sideEl,
     h("div", { class: "content" }, h("header", { class: "top top--erp" }, stampEl, refreshBtn), main)));
   badges(); stamp();
@@ -105,6 +123,7 @@ function draw() {
   navEl.querySelectorAll("button[data-id]").forEach((b) => b.setAttribute("aria-current", String(b.dataset.id === v.id)));
   document.title = `${v.label} · Gestión de Panamericano`;
   ctx.viewUpdate = null;
+  for (const fn of leave.splice(0)) { try { fn(); } catch (e) { console.warn("[erp] al salir de la pantalla", e); } }
   const params = pre; pre = {};
   let node;
   try { node = v.render(ctx, params); }
@@ -139,7 +158,16 @@ export async function boot() {
   shell();
   route();
   clearInterval(timer); timer = setInterval(autoRefresh, 30000);
+  watchFleetBadge();
 }
+
+// La insignia de alertas del menú: se carga en segundo plano y se actualiza sola. Si la flota todavía no está activada en la base, no aparece y no molesta.
+function watchFleetBadge() {
+  clearInterval(fleetTimer);
+  const refresh = async () => { try { if (!fleet.get()) await fleet.ensure(); else fleet.patchAlerts(await fetchOpenAlerts(2)); badges(); } catch { /* flota sin activar o sin conexión */ } };
+  refresh(); fleetTimer = setInterval(() => { if (!document.hidden && user) refresh(); }, 45000);
+}
+fleet.on((w) => { if (w === "alerts" || w === "load") badges(); }); // la insignia de alertas sigue a los datos de la flota
 addEventListener("hashchange", () => { if (user && main && document.body.contains(main)) route(); });
 document.addEventListener("visibilitychange", autoRefresh);
 addEventListener("online", autoRefresh);

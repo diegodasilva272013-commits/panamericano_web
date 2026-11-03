@@ -4,3 +4,8 @@ dist/
 *.log
 # videos fuente del hero (pesan ~90 MB): se guardan localmente, los frames ya están en public/
 assets-src/**/*.mp4
+
+# credenciales: nunca al repositorio
+.env
+.env.*
+!.env.example
