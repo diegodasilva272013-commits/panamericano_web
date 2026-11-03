@@ -32,8 +32,8 @@ const VIEWS = [
   { id: "reportes", label: "Reportes", icon: "reporte", group: "Flota", render: reportes },
   { id: "ajustes-flota", label: "Límites y tolerancias", icon: "ajustes", group: "Flota", render: ajustesFlota },
 ];
-const mark = '<svg viewBox="0 0 24 24" width="26" height="26"><rect width="24" height="24" rx="7" fill="#f4b400"/><path d="M2 18c7 1 14-3 20-11v5C16 19 9 22 2 21z" fill="#171200"/><path d="M2 21c7 1 14-3 20-11" stroke="#d8261f" stroke-width="2.2" fill="none"/></svg>';
-const brand = () => h("div", { class: "brand", html: mark + "<span>Panamericano</span>" });
+const mark = '<img src="/img/logo-panamericano-sm.webp" width="360" height="252" alt="Panamericano de Jujuy S.A." decoding="async">';
+const brand = () => h("div", { class: "brand", html: mark });
 
 let user = null, D = null, BK = [], loadedAt = 0, current = "inicio", pre = {}, main, navEl, sideEl, stampEl, loading = null, timer = null, leave = [], fleetTimer = null;
 

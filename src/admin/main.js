@@ -67,8 +67,8 @@ hooks.undo = () => histGo(-1);
 hooks.repaint = () => paintStatus();
 hooks.flush = () => { clearTimeout(histTimer); histPush(); };
 hooks.pos = () => hi;
-const mark = '<svg viewBox="0 0 24 24" width="26" height="26"><rect width="24" height="24" rx="7" fill="#f4b400"/><path d="M2 18c7 1 14-3 20-11v5C16 19 9 22 2 21z" fill="#171200"/><path d="M2 21c7 1 14-3 20-11" stroke="#d8261f" stroke-width="2.2" fill="none"/></svg>';
-const brand = () => h("div", { class: "brand", html: mark + "<span>Panamericano</span>" });
+const mark = '<img src="/img/logo-panamericano-sm.webp" width="360" height="252" alt="Panamericano de Jujuy S.A." decoding="async">';
+const brand = () => h("div", { class: "brand", html: mark });
 const sectionLabel = (id) => SECTIONS.find((s) => s.id === id)?.label || id;
 
 /* qué parte de la web cambió respecto de lo publicado */
