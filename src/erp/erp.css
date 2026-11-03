@@ -181,3 +181,72 @@ a.btn{text-decoration:none}
   .printing .tbl td,.printing .tbl th{padding:6px 8px;font-size:12px}
   .printing .chip{background:none;padding:0;color:#000}
 }
+
+/* ===== Identidad Panamericano en la gestión: menú negro con la marca al frente, contenido en papel, rojo solo donde guía ===== */
+.erp{--side:276px;--shadow-1:0 1px 2px rgba(20,18,12,.05),0 10px 30px -18px rgba(20,18,12,.22)}
+.erp .livery{display:none}
+
+/* menú */
+.erp .side{padding:16px 14px 14px;gap:12px;background:linear-gradient(180deg,#0f0e0d 0%,#0b0b0a 100%);border-right:1px solid rgba(243,239,230,.06)}
+.erp .side__bar{display:block}
+.erp .side .brand{justify-content:center;padding:10px 10px 8px;border-radius:20px;background:radial-gradient(120% 120% at 50% 0%,rgba(232,38,31,.26),rgba(232,38,31,0) 70%),#141312;box-shadow:inset 0 0 0 1px rgba(243,239,230,.08)}
+.erp .side .brand img{height:74px;filter:drop-shadow(0 6px 16px rgba(232,38,31,.35))}
+.erp .side__body{gap:10px}
+.erp .side__nav{gap:2px;padding-right:2px}
+.erp .side__group{margin:14px 14px 6px;font-size:10.5px;letter-spacing:.18em;color:rgba(243,239,230,.5)}
+.erp .side__group:first-child{margin-top:4px}
+.erp .side__nav button{position:relative;min-height:38px;padding:0 14px;border-radius:12px;font-size:14.5px;color:rgba(243,239,230,.72)}
+.erp .side__nav button svg{flex:none;opacity:.8}
+.erp .side__nav button:hover{background:rgba(243,239,230,.07)}
+.erp .side__nav button[aria-current=true]{background:linear-gradient(90deg,rgba(232,38,31,.22),rgba(232,38,31,.06));color:#fff;box-shadow:inset 0 0 0 1px rgba(232,38,31,.28)}
+.erp .side__nav button[aria-current=true]::before{content:"";position:absolute;left:-14px;top:9px;bottom:9px;width:4px;border-radius:0 4px 4px 0;background:var(--accent-hi)}
+.erp .side__nav button[aria-current=true] svg{color:#ff6a60;opacity:1}
+.erp .nav__n{background:var(--accent);color:#fff;box-shadow:0 0 0 3px rgba(232,38,31,.2)}
+.erp .side__nav button[aria-current=true] .nav__n{background:#fff;color:var(--accent);box-shadow:none}
+.erp .side__foot{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:10px 0 0;border-top:1px solid rgba(243,239,230,.1)}
+.erp .side__foot small{grid-column:1/-1;font-weight:600;color:rgba(243,239,230,.7);padding:0 10px 4px}
+.erp .side__foot .link{align-self:stretch;justify-content:center;min-height:36px;padding:0 8px;white-space:nowrap;border:0;border-radius:10px;font-weight:600;font-size:14px;color:rgba(243,239,230,.82)}
+.erp .side__foot .link:hover{background:rgba(243,239,230,.07);color:#fff}
+
+/* barra superior y encabezado de cada pantalla */
+.erp .top{min-height:60px;background:rgba(242,239,231,.82);border-bottom:1px solid rgba(20,18,12,.07)}
+.erp .main{padding-top:clamp(24px,3vw,44px)}
+.erp .title{font-size:clamp(28px,3.2vw,40px)}
+.erp .title::after{width:48px;height:4px;border-radius:4px;margin-top:14px;background:var(--accent)}
+.erp .page{gap:28px}
+.erp .page__desc{margin-top:16px;font-size:15.5px}
+
+/* tarjetas: una sola familia (mismo radio, borde y sombra suave) */
+.erp .panel,.erp .kpi,.erp .tbl,.erp .trip{border-radius:20px;box-shadow:inset 0 0 0 1px rgba(20,18,12,.08),var(--shadow-1)}
+.erp .panel{padding:26px;gap:16px}
+.erp .kpis{gap:18px}
+.erp .kpi{position:relative;gap:8px;padding:22px 24px;overflow:hidden}
+.erp .kpi::before{content:"";position:absolute;left:0;top:22px;bottom:22px;width:3px;border-radius:0 3px 3px 0;background:transparent}
+.erp .kpi--ok::before{background:var(--ok)}.erp .kpi--bad::before{background:var(--accent)}.erp .kpi--warn::before{background:#d99a00}
+.erp .kpi__l{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.erp .kpi__v{font-size:clamp(26px,2.4vw,34px)}
+.erp .kpi__s{margin-top:2px}
+.erp .kpi--bad{background:#fff;box-shadow:inset 0 0 0 1px rgba(216,38,31,.3),var(--shadow-1)}
+.erp .kpi--warn{background:#fff;box-shadow:inset 0 0 0 1px rgba(217,154,0,.4),var(--shadow-1)}
+.erp .kpi--link:hover,.erp .fk--btn:hover{box-shadow:inset 0 0 0 1.5px var(--ink),var(--shadow-1)}
+.erp .cols{gap:18px}
+.erp .panel h2,.erp .h2b{font-size:19px}
+
+/* Flota ahora: cinco cifras iguales */
+.erp .fks{display:grid;grid-template-columns:repeat(auto-fit,minmax(176px,1fr));gap:12px}
+.erp .fk{flex-direction:column;align-items:flex-start;gap:6px;padding:16px 18px;border-radius:16px;background:var(--soft)}
+.erp .fk b{font-size:30px}
+
+/* tablas y filtros */
+.erp .tbl th{background:#f4f1e8;letter-spacing:.1em;font-size:11.5px}
+.erp .tbl tr.is-click:hover{background:#faf6ec}
+.erp .btn--ghost{background:#fff;box-shadow:inset 0 0 0 1px rgba(20,18,12,.16)}
+
+@media(max-width:900px){
+  .erp .side{padding:14px 12px 10px;border-right:0}
+  .erp .side__bar{display:flex}
+  .erp .side .brand{padding:6px 12px;border-radius:14px}
+  .erp .side .brand img{height:44px;filter:none}
+  .erp .side__nav button[aria-current=true]::before{display:none}
+  .erp .kpi{padding:18px 20px}
+}
