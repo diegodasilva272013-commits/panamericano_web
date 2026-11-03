@@ -8,9 +8,10 @@ export function getCore() {
   if (core) return core;
   const env = process.env;
   const url = env.SUPABASE_URL || env.VITE_SUPABASE_URL, key = env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error("Falta SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY en Vercel.");
-  const client = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+  // sin la clave de servicio los pagos no están activados: se puede preguntar qué hay activado, pero nada toca la base
+  const client = url && key ? createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } }) : null;
   const rpc = async (fn, args) => {
+    if (!client) throw new Error("Falta SUPABASE_SERVICE_ROLE_KEY en Vercel.");
     const { data, error } = await client.rpc(fn, args);
     if (error) throw Object.assign(new Error(`${fn}: ${error.message}`), { code: error.code });
     return data;
