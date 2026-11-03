@@ -1,8 +1,10 @@
 import { ORIGINS, ROUTES, BOOKING, TZ, destinationsFor, short, WA_NUMBER, esc, stopsOf, busFor, fareBetween, runsOn } from "./data.js";
 import { fillSelect } from "./schedule.js";
 import { tripInfo, bookSeats } from "./reservas.js";
+import { payConfig, mountPay, mountReturn } from "./pagos.js";
 
 const $ = (s) => document.querySelector(s);
+let payCfg = null; // medios de pago online activados (null = todavía no hay: la reserva se confirma por WhatsApp o teléfono)
 const B = { step: 0, origin: ORIGINS[0], dest: "Tilcara", date: "", pax: 1, key: "", seats: [], people: [], taken: [], seatState: "idle", busy: false };
 let layout = []; // filas del plano del coche de la salida elegida
 
@@ -109,7 +111,7 @@ function renderAside() {
       <div><small>Asientos</small>${e(B.seats.length && [...B.seats].sort(byNum).join(", "))}</div>
       <div><small>Pasajeros</small>${e(String(B.pax))}</div>
     </div>
-    <p class="tk__fare">${fare ? `Tarifa: <b>${money(fare)}</b> por persona${B.seats.length > 1 ? ` · <b>${money(fare * B.seats.length)}</b> en total` : ""}. Se paga al confirmar.` : "Tarifa: se informa al confirmar con la boletería."}</p></div></div>`;
+    <p class="tk__fare">${fare ? `Tarifa: <b>${money(fare)}</b> por persona${B.seats.length > 1 ? ` · <b>${money(fare * B.seats.length)}</b> en total` : ""}. ${payCfg ? "Se paga online al reservar." : "Se paga al confirmar."}` : "Tarifa: se informa al confirmar con la boletería."}</p></div></div>`;
 }
 
 function showStepBar() {
@@ -191,6 +193,7 @@ async function confirm() {
   }
   B.busy = false;
   const code = res.code, total = res.total;
+  const payOnline = !!(payCfg && total); // con medios de pago activados y tarifa cargada, se paga online
   const msg = [
     `Hola Panamericano, hice la reserva ${code} por la web:`,
     `Viaje: ${B.origin} → ${B.dest}`,
@@ -206,13 +209,31 @@ async function confirm() {
       <div><small>Asientos</small><b>${esc(seats.join(", "))}</b></div>
     </div>
     <p class="ticket__code">CÓDIGO <strong>${esc(code)}</strong></p>
-    <p class="ticket__note">${total ? `Total a pagar al confirmar: <b>${esc(money(total))}</b>. ` : ""}${esc(BOOKING.legal || "La boletería te confirma la reserva.")} Guardá tu código.</p>
+    ${payOnline
+      ? `<div id="b-pay"></div><p class="ticket__note">Guardá tu código. Si tenés algún problema con el pago, escribinos por WhatsApp.</p>`
+      : `<p class="ticket__note">${total ? `Total a pagar al confirmar: <b>${esc(money(total))}</b>. ` : ""}${esc(BOOKING.legal || "La boletería te confirma la reserva.")} Guardá tu código.</p>`}
     <div class="ticket__actions">
-      <a class="btn" target="_blank" rel="noopener" href="https://wa.me/${esc(WA_NUMBER)}?text=${encodeURIComponent(msg)}">Avisar por WhatsApp</a>
+      <a class="btn${payOnline ? " btn--ghost" : ""}" target="_blank" rel="noopener" href="https://wa.me/${esc(WA_NUMBER)}?text=${encodeURIComponent(msg)}">${payOnline ? "Consultar por WhatsApp" : "Avisar por WhatsApp"}</a>
       <button class="btn btn--ghost" type="button" id="b-again">Nueva reserva</button>
     </div>`;
   B.step = 4; showStep();
-  $("#b-again").onclick = () => { Object.assign(B, { step: 0, key: "", seats: [], people: [], taken: [], seatState: "idle" }); showStep(); };
+  const pay = $("#b-pay");
+  if (pay) {
+    mountPay(pay, { code, total, expires: res.expires, cfg: payCfg });
+    pay.addEventListener("pay:done", (ev) => { const s = $("#b-ticket .ticket__top small"); if (s) s.textContent = ev.detail.kind === "ok" ? "Reserva confirmada" : "Reserva vencida"; const n = $("#b-ticket > .ticket__note"); if (n) n.textContent = "Guardá tu código de reserva."; });
+  }
+  $("#b-again").onclick = () => { $("#b-pay")?._stop?.(); Object.assign(B, { step: 0, key: "", seats: [], people: [], taken: [], seatState: "idle" }); showStep(); };
+}
+
+// Volvés de Mercado Pago (o abrís un link con ?pago=CÓDIGO): se muestra cómo va esa reserva.
+async function resumePayment(code) {
+  const cfg = await payConfig(); payCfg = cfg;
+  B.step = 4; showStep();
+  const box = $("#b-ticket"); mountReturn(box, code, cfg);
+  const again = Object.assign(document.createElement("div"), { className: "ticket__actions" });
+  const btn = Object.assign(document.createElement("button"), { className: "btn btn--ghost", type: "button", textContent: "Nueva reserva", onclick: () => { box.querySelector(".pay")?.parentElement?._stop?.(); history.replaceState(null, "", location.pathname + location.hash); Object.assign(B, { step: 0, key: "", seats: [], people: [], taken: [], seatState: "idle" }); showStep(); } });
+  again.append(btn); box.append(again);
+  setTimeout(() => document.getElementById("reservar")?.scrollIntoView({ behavior: "smooth", block: "start" }), 500);
 }
 
 export function prefill({ origin, dest, time }) {
@@ -234,6 +255,14 @@ export function initBooking() {
   dt.min = todayISO(); dt.value = B.date = todayISO();
   const lim = new Date(); lim.setDate(lim.getDate() + (BOOKING.daysAhead || 60)); dt.max = new Date(lim.getTime() - lim.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
   if (BOOKING.legal) $(".book__legal").textContent = BOOKING.legal;
+  payConfig().then((c) => {
+    payCfg = c; if (!c) return; renderAside();
+    // con pago online el aviso de abajo no puede seguir diciendo que no se cobra nada por la web
+    const legal = $(".book__legal");
+    if (legal && /no se cobra nada/i.test(legal.textContent)) legal.textContent = "El pago se hace online al reservar, con Mercado Pago o transferencia." + (BOOKING.holdMinutes > 0 ? " Si no se paga a tiempo, los asientos se liberan solos." : "");
+  });
+  const back = new URLSearchParams(location.search).get("pago");
+  if (/^PB-[A-Z0-9]{6}$/.test(back || "")) resumePayment(back);
   const reset = () => { B.key = ""; B.seats = []; B.seatState = "idle"; };
 
   o.onchange = () => { B.origin = o.value; fillSelect(d, destinationsFor(B.origin), B.dest); B.dest = d.value; reset(); showStep(); };

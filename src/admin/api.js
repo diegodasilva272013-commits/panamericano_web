@@ -122,7 +122,8 @@ function resErr(e, what) {
 }
 // reservas de un día (y opcionalmente de un servicio/horario)
 export async function listReservations({ date, route, time }) {
-  let q = sb.from("reservations").select("*").eq("trip_date", date).order("trip_time").order("seat", { ascending: true }).limit(1000);
+  await sb.rpc("release_expired_holds"); // libera lo que no se pagó a tiempo (si todavía no existe en la base, se ignora)
+  let q =sb.from("reservations").select("*").eq("trip_date", date).order("trip_time").order("seat", { ascending: true }).limit(1000);
   if (route) q = q.eq("route_id", route); if (time) q = q.eq("trip_time", time);
   const { data, error } = await q; if (error) throw resErr(error, "leer las reservas");
   return data || [];

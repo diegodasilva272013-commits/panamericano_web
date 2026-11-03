@@ -29,14 +29,17 @@ export const sinceDate = (today = todayJ()) => addDays(today, -730);
 
 export async function loadAll() {
   const since = sinceDate();
-  const [res, pay, exp, remote, closed] = await Promise.all([
+  await sb.rpc("release_expired_holds"); // libera lo que no se pagó a tiempo (si todavía no existe en la base, se ignora)
+  const [res, pay, exp, remote, closed, review] = await Promise.all([
     all(() => sb.from("reservations").select("*").gte("trip_date", since).order("trip_date").order("id")),
     all(() => sb.from("payments").select("*").gte("paid_at", since).order("paid_at").order("id")),
     all(() => sb.from("expenses").select("*").gte("spent_at", since).order("spent_at").order("id")),
     fetchRemote().catch(() => null),
     all(() => sb.from("closed_trips").select("*").gte("trip_date", since).order("trip_date").order("id")).catch(() => []),
+    // pagos online que hay que mirar a mano (monto distinto, etc.); si todavía no se activaron los pagos online, no hay nada
+    all(() => sb.from("payment_orders").select("*").eq("state", "revision").order("updated_at")).catch(() => []),
   ]);
-  return { res: res.map((r) => ({ ...r, trip_date: String(r.trip_date).slice(0, 10) })), pay: pay.map(fixPay), exp: exp.map(fixExp), closed, content: withDefaults(remote?.data), since };
+  return { res: res.map((r) => ({ ...r, trip_date: String(r.trip_date).slice(0, 10) })), pay: pay.map(fixPay), exp: exp.map(fixExp), closed, review, content: withDefaults(remote?.data), since };
 }
 const fixPay = (p) => ({ ...p, amount: +p.amount, paid_at: String(p.paid_at).slice(0, 10) });
 const fixExp = (e) => ({ ...e, amount: +e.amount, spent_at: String(e.spent_at).slice(0, 10) });

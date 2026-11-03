@@ -43,7 +43,10 @@ const ctx = {
   // cobros que apuntan a una reserva que ya no existe (alguien la borró a mano): se avisan, no se pierden
   alerts: () => {
     const o = orphanPayments(D.res, D.pay).filter((p) => p.paid_at >= addDays(D.since, 62));
-    return o.length ? h("button", { type: "button", class: "warn warn--btn", onclick: () => ctx.go("cobros", {}) }, `${o.length} ${o.length === 1 ? "cobro apunta" : "cobros apuntan"} a reservas que ya no existen (${money(o.reduce((a, p) => a + (p.kind === "devolucion" ? -p.amount : p.amount), 0))}). Revisalos en Cobros.`) : h("div");
+    // pagos online que no coinciden con lo pedido (por ejemplo una transferencia por otro monto): hay que mirarlos en la cuenta del proveedor
+    const rev = (D.review || []).map((r) => h("button", { type: "button", class: "warn warn--btn", onclick: () => ctx.open(r.code) },
+      `Pago online para revisar: reserva ${r.code} (${r.provider === "talo" ? "transferencia" : "Mercado Pago"}, se esperaban ${money(+r.amount)}). Mirá lo que llegó en tu cuenta de ${r.provider === "talo" ? "Talo" : "Mercado Pago"} y registralo en la reserva.`));
+    return h("div", {}, ...rev, o.length ? h("button", { type: "button", class: "warn warn--btn", onclick: () => ctx.go("cobros", {}) }, `${o.length} ${o.length === 1 ? "cobro apunta" : "cobros apuntan"} a reservas que ya no existen (${money(o.reduce((a, p) => a + (p.kind === "devolucion" ? -p.amount : p.amount), 0))}). Revisalos en Cobros.`) : null);
   },
 };
 

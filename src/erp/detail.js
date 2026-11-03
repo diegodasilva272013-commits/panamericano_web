@@ -31,7 +31,8 @@ export function openBooking(ctx, code, opts = {}) {
     const money$ = (label, v, cls) => h("div", { class: "sum__i" + (cls ? " " + cls : "") }, h("span", {}, label), h("strong", {}, money(v)));
 
     const status = h("section", { class: "dsec" },
-      h("div", { class: "dsec__row" }, chip(STATUS[b.status], STATUS_TONE[b.status]), chip(PAY[b.pay], PAY_TONE[b.pay]), b.rows[0].source === "web" ? chip("Pedida por la web") : chip("Cargada en boletería")),
+      h("div", { class: "dsec__row" }, chip(STATUS[b.status], STATUS_TONE[b.status]), chip(PAY[b.pay], PAY_TONE[b.pay]), b.rows[0].source === "web" ? chip("Pedida por la web") : chip("Cargada en boletería"),
+        b.status === "pendiente" && b.rows[0].hold_expires_at && chip(`Espera el pago hasta las ${new Date(b.rows[0].hold_expires_at).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Argentina/Jujuy" })}`, "warn")),
       h("div", { class: "dsec__acts" },
         b.status === "pendiente" && h("button", { type: "button", class: "btn btn--sm", disabled: busy, onclick: () => act(() => setStatus(b.code, "confirmada"), "Reserva confirmada.") }, icon("check", 16), "Confirmar"),
         b.status !== "cancelada" && h("button", { type: "button", class: "btn btn--sm btn--ghost", disabled: busy, onclick: async () => {
@@ -57,9 +58,10 @@ export function openBooking(ctx, code, opts = {}) {
       b.noFare > 0 && h("p", { class: "warn" }, `${b.noFare} ${b.noFare === 1 ? "asiento no tiene" : "asientos no tienen"} tarifa cargada: el total puede estar incompleto.`),
       b.pays.length ? table({ label: "Cobros de la reserva", cols: [
         { h: "Fecha", c: (p) => fmtDay(p.paid_at) },
-        { h: "Detalle", c: (p) => h("span", {}, p.kind === "devolucion" ? "Devolución" : "Cobro", " · ", METHODS[p.method] || p.method, p.ref && h("small", { class: "sub" }, " " + p.ref)) },
+        { h: "Detalle", c: (p) => h("span", {}, p.kind === "devolucion" ? "Devolución" : "Cobro", " · ", METHODS[p.method] || p.method, p.provider && chip("Automático", "ok"), p.ref && h("small", { class: "sub" }, " " + p.ref)) },
         { h: "Importe", num: true, c: (p) => h("strong", { class: p.kind === "devolucion" ? "neg" : "" }, (p.kind === "devolucion" ? "− " : "") + money(p.amount)) },
-        { h: "", cls: "act", c: (p) => h("button", { type: "button", class: "ico ico--del ico--sm", "aria-label": `Anular este ${p.kind === "devolucion" ? "movimiento" : "cobro"} de ${money(p.amount)}`, disabled: busy, onclick: async () => {
+        // los cobros que llegaron solos de Mercado Pago o Talo no se anulan: si se borraran, un aviso repetido los volvería a cargar
+        { h: "", cls: "act", c: (p) => p.provider ? null : h("button", { type: "button", class: "ico ico--del ico--sm", "aria-label": `Anular este ${p.kind === "devolucion" ? "movimiento" : "cobro"} de ${money(p.amount)}`, disabled: busy, onclick: async () => {
           if (await confirmBox(`¿Anular ${p.kind === "devolucion" ? "la devolución" : "el cobro"} de ${money(p.amount)} del ${fmtDay(p.paid_at)}? Se borra del registro y el saldo se recalcula.`, "Anular", "No", { focusCancel: true })) act(() => deletePayment(p.id), "Se anuló el registro.");
         } }, icon("trash", 18)) }], rows: b.pays }) : h("p", { class: "empty" }, "Todavía no se registró ningún cobro."),
       form ? payForm(b) : null);

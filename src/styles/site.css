@@ -286,3 +286,32 @@
 .book__err{margin:0;padding:12px clamp(20px,4vw,56px);color:#ffb4b6;font-size:14px;font-weight:500}
 .ticket__note{margin:14px 0 0;font-size:13px;color:var(--muted);line-height:1.5}
 .chips--big button:disabled{opacity:.45;cursor:not-allowed}
+
+/* ===== pago online de la reserva (Mercado Pago o transferencia) ===== */
+.pay{margin:0 30px 22px;padding:18px 18px 16px;border-radius:14px;background:rgba(20,20,18,.05);border:1px solid rgba(20,20,18,.14)}
+.pay__head{margin:0 0 14px;font-size:15px;line-height:1.5;color:var(--paper-ink)}
+.pay__head:empty{display:none}
+.pay__timer{font-variant-numeric:tabular-nums}
+.pay__opts{display:flex;gap:10px;flex-wrap:wrap}
+.pay__opts .btn{flex:1 1 200px;justify-content:center;min-height:48px}
+.pay__opts .btn:disabled{opacity:.55;cursor:wait}
+.pay__state{margin:12px 0 0;font-size:14px;line-height:1.5;color:#5f5b52}
+.pay__state:empty{display:none}
+.pay__bank{margin-top:14px;display:grid;gap:8px}
+.pay__lead,.pay__hint{margin:0;font-size:14px;line-height:1.5;color:#3a372f}
+.pay__row{display:grid;grid-template-columns:64px minmax(0,1fr) auto;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;background:#fff;border:1px solid rgba(20,20,18,.14)}
+.pay__row small{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:#5f5b52}
+.pay__row b{font:700 17px var(--font-display);letter-spacing:.02em;overflow-wrap:anywhere}
+.pay__copy{min-height:40px;padding:0 14px;border-radius:999px;border:1px solid rgba(20,20,18,.3);background:transparent;color:var(--paper-ink);font:600 13px var(--font-text);cursor:pointer;transition:background .2s,border-color .2s}
+.pay__copy:hover{background:rgba(20,20,18,.07)}
+.pay--ok{background:rgba(31,157,85,.12);border-color:rgba(31,157,85,.55)}
+.pay--bad{background:rgba(229,72,77,.1);border-color:rgba(229,72,77,.5)}
+.pay--ok .pay__state,.pay--bad .pay__state{margin:0;font-size:15px;color:var(--paper-ink)}
+.pay-slot{padding:4px 30px 26px}
+.pay-slot .pay,.pay-dock .pay{margin:14px 0 0}
+@media(max-width:560px){.pay{margin:0 16px 18px}.pay-slot{padding:4px 16px 22px}.pay__row{grid-template-columns:minmax(0,1fr) auto}.pay__row small{grid-column:1/-1}}
+.ticket .ticket__note{padding:0 30px;color:#5f5b52}
+.ticket .pay-slot .ticket__note{padding:0}
+@media(max-width:560px){.ticket .ticket__note{padding:0 16px}.pay__row{grid-template-columns:minmax(0,1fr);gap:6px;padding:12px}.pay__row small{grid-column:auto}.pay__copy{justify-self:start;min-height:44px}}
+.ticket .ticket__note{margin-bottom:14px}
+@media(max-width:560px){.pay__row b{font-size:15px;letter-spacing:0;font-variant-numeric:tabular-nums}}

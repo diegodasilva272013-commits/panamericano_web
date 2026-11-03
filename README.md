@@ -66,6 +66,45 @@ Es la parte de **gestión de la empresa**, separada del editor de la web (`/admi
 
 Criterios: *Cobrado* es plata que entró por fecha de cobro (neta de devoluciones); *Vendido* es el valor de los viajes por fecha de viaje. Se cargan los últimos 2 años y todo lo futuro. No hay cobro online: los cobros los registra el personal.
 
+### Pagos online: Mercado Pago y transferencia (Talo)
+
+El pasajero reserva, elige cómo pagar y la reserva se confirma sola cuando entra la plata. Nadie revisa comprobantes. Todo queda registrado en `payments` y se ve en el ERP (los cobros automáticos llevan la marca *Automático*).
+
+**Cómo funciona**
+1. El pasajero elige viaje y asiento: el asiento queda retenido el tiempo que se configure (*Coches y reglas → Minutos para pagar*, por ejemplo 30). Si no paga, el asiento se libera solo.
+2. Paga con **Mercado Pago** (tarjeta o saldo; la web lo manda a Mercado Pago) o por **transferencia**: la web le muestra un CVU y alias exclusivos de esa reserva (Talo).
+3. El proveedor avisa al servidor (`/api/webhooks/mp`, `/api/webhooks/talo`). El servidor **valida la firma** (Mercado Pago) o la clave del enlace (Talo) y **consulta el pago directamente al proveedor** antes de registrar nada. Recién ahí guarda el cobro y confirma la reserva.
+4. La pantalla del pasajero se confirma sola. Si el aviso se demora, al consultar el estado el servidor concilia por su cuenta.
+
+**Qué garantiza**
+- El monto sale siempre de la base (las tarifas del panel), nunca del navegador.
+- Un aviso repetido no duplica el cobro (el par proveedor + número de operación es único en la base).
+- Un aviso falso no confirma nada: sin firma válida se ignora, y se verifica contra el proveedor.
+- Si la transferencia llega por otro monto (de más o de menos), no se confirma: el ERP avisa en *Inicio* para revisarlo a mano.
+- Si el pago llega después de vencida la reserva: si el asiento sigue libre se reabre y se confirma; si ya se vendió a otra persona queda cancelada y el ERP la marca *A devolver*.
+- Cada aviso queda en la bitácora `payment_events`.
+
+**Instalación (una sola vez)**
+1. En Supabase > SQL Editor ejecutar, en orden: `booking.sql` (se actualizó: agrega el plazo de pago) y `pagos.sql`. Los dos se pueden volver a ejecutar sin perder datos.
+2. Cargar las **tarifas** en el panel (*Horarios de salida → cada servicio → tarifas por parada*). Sin tarifa no hay monto para cobrar.
+3. En Vercel > Settings > Environment Variables agregar (y volver a desplegar). Ninguna de estas claves va al navegador ni al repositorio:
+
+   | Variable | Qué es |
+   |---|---|
+   | `SITE_URL` | Dirección pública del sitio, por ejemplo `https://panamericanoweb.vercel.app` |
+   | `SUPABASE_SERVICE_ROLE_KEY` | Clave de servicio (secreta) de Supabase. `SUPABASE_URL` se toma de `VITE_SUPABASE_URL` si no se define |
+   | `MP_ACCESS_TOKEN` | Access Token de la aplicación de Mercado Pago |
+   | `MP_WEBHOOK_SECRET` | Firma secreta de los Webhooks de Mercado Pago |
+   | `TALO_MODE` | `sandbox` (pruebas) o `live` (real). Por defecto `sandbox` |
+   | `TALO_USER_ID`, `TALO_CLIENT_ID`, `TALO_CLIENT_SECRET` | Credenciales de Talo (panel de Talo > Conexiones) |
+   | `TALO_WEBHOOK_KEY` | Una clave larga al azar inventada por nosotros: Talo todavía no firma sus avisos, así que el aviso viaja con esta clave en el enlace |
+
+4. En Mercado Pago > Tus integraciones > Webhooks, cargar la URL `https://TU-SITIO/api/webhooks/mp` con el evento **Pagos** y copiar la firma secreta a `MP_WEBHOOK_SECRET`.
+5. Probar **primero en pruebas** (cuentas de prueba de Mercado Pago y `TALO_MODE=sandbox`, con el simulador de transferencias de Talo) y recién después pasar a producción.
+6. Cuando todo ande, en *Coches y reglas* poner **Minutos para pagar** (por ejemplo 30). En 0 las reservas no vencen. **No lo actives antes de que los pagos estén funcionando**: las reservas sin pagar se liberarían.
+
+Los botones de pago aparecen solos en la web cuando hay al menos un medio de pago configurado; si no, la reserva sigue como antes (se confirma por WhatsApp o teléfono).
+
 ### Límites del plan gratuito de Supabase (importante)
 - **Almacenamiento: 1 GB.** Cada hero nuevo ocupa ~75 MB; borrar las versiones viejas desde el panel.
 - **Tráfico: 5 GB por mes.** Las fotos pesan poco, pero **los cuadros de un hero propio los sirve Supabase**: un visitante que recorre todo el hero baja hasta ~52 MB (escritorio) o ~22 MB (celular). El hero original incluido en el sitio se sirve desde Vercel y no tiene este límite.

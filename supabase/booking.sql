@@ -36,6 +36,11 @@ create table if not exists public.reservations (
     route_id with =, trip_date with =, trip_time with =, seat with =, int4range(from_idx, to_idx) with &&
   ) where (status <> 'cancelada')
 );
+-- Ventana para pagar: una reserva de la web queda "pendiente" hasta esa hora; si no se pagó, el asiento se libera solo.
+-- Vacío = no vence (reservas cargadas a mano, o pagos online todavía no activados). released_at marca las liberadas por vencimiento.
+alter table public.reservations add column if not exists hold_expires_at timestamptz;
+alter table public.reservations add column if not exists released_at timestamptz;
+create index if not exists reservations_vence_idx on public.reservations (hold_expires_at) where status = 'pendiente' and hold_expires_at is not null;
 create index if not exists reservations_viaje_idx  on public.reservations (route_id, trip_date, trip_time);
 create index if not exists reservations_codigo_idx on public.reservations (code);
 create index if not exists reservations_fecha_idx  on public.reservations (trip_date);
@@ -76,7 +81,23 @@ create policy "admin maneja salidas cerradas" on public.closed_trips for all to 
 create or replace function public.jujuy_now() returns timestamp language sql stable as
 $$ select now() at time zone 'America/Argentina/Jujuy'; $$;
 
+-- Libera los asientos de las reservas de la web que no se pagaron a tiempo. Solo toca reservas pendientes ya vencidas.
+create or replace function public.release_expired_holds() returns int language plpgsql security definer set search_path = public as
+$$
+declare v_n int;
+begin
+  with x as (
+    update reservations set status = 'cancelada', released_at = now()
+     where status = 'pendiente' and source = 'web' and hold_expires_at is not null and hold_expires_at < now()
+    returning 1)
+  select count(*) into v_n from x;
+  return v_n;
+end;
+$$;
+grant execute on function public.release_expired_holds() to anon, authenticated;
+
 -- Asientos ocupados de una salida (sin datos personales) y si está cerrada.
+-- Una reserva pendiente cuyo plazo de pago ya venció cuenta como libre.
 create or replace function public.trip_info(p_route text, p_date date, p_time text)
 returns jsonb language sql security definer set search_path = public stable as
 $$
@@ -84,7 +105,8 @@ $$
     'closed', exists (select 1 from closed_trips c where c.route_id = p_route and c.trip_date = p_date and (c.trip_time is null or c.trip_time = p_time)),
     'taken', coalesce((select jsonb_agg(jsonb_build_object('seat', r.seat, 'from', r.from_idx, 'to', r.to_idx))
                          from reservations r
-                        where r.route_id = p_route and r.trip_date = p_date and r.trip_time = p_time and r.status <> 'cancelada'), '[]'::jsonb)
+                        where r.route_id = p_route and r.trip_date = p_date and r.trip_time = p_time and r.status <> 'cancelada'
+                          and not (r.status = 'pendiente' and r.hold_expires_at is not null and r.hold_expires_at < now())), '[]'::jsonb)
   );
 $$;
 grant execute on function public.trip_info(text, date, text) to anon, authenticated;
@@ -112,6 +134,8 @@ declare
   v_max     int;
   v_ahead   int;
   v_cut     int;
+  v_hold    int;
+  v_expires timestamptz;
   v_now     timestamp := public.jujuy_now();
   v_dep     timestamp;
   v_valid   text[];
@@ -134,6 +158,10 @@ begin
   v_max   := coalesce((v_cfg ->> 'maxSeats')::int, 6);
   v_ahead := coalesce((v_cfg ->> 'daysAhead')::int, 60);
   v_cut   := coalesce((v_cfg ->> 'cutoffMinutes')::int, 30);
+  -- minutos para pagar (0 o vacío = la reserva no vence). Con pago online, el asiento queda retenido ese tiempo.
+  v_hold  := greatest(0, least(coalesce((v_cfg ->> 'holdMinutes')::int, 0), 1440));
+  v_expires := case when v_hold > 0 then now() + make_interval(mins => v_hold) else null end;
+  perform public.release_expired_holds();  -- así un asiento cuyo plazo venció se puede volver a vender
 
   select r into v_route from jsonb_array_elements(coalesce(v_data -> 'routes', '[]'::jsonb)) r where r ->> 'id' = p_route limit 1;
   if v_route is null then raise exception 'DATOS:Ese servicio no existe.'; end if;
@@ -197,14 +225,14 @@ begin
     if length(v_name) < 3 or length(v_name) > 80 or v_name !~ '\s' then raise exception 'DATOS:Escribí nombre y apellido del pasajero %.', v_i; end if;
     if v_doc !~ '^[A-Za-z0-9.-]{6,20}$' then raise exception 'DATOS:Revisá el documento del pasajero %.', v_i; end if;
     begin
-      insert into reservations (code, route_id, trip_date, trip_time, from_idx, to_idx, from_name, to_name, seat, passenger_name, passenger_doc, phone, email, fare, source)
-      values (v_code, p_route, p_date, p_time, p_from, p_to, v_stops ->> p_from, v_stops ->> p_to, p_seats[v_i], v_name, v_doc, v_phone, v_email, v_fare, 'web');
+      insert into reservations (code, route_id, trip_date, trip_time, from_idx, to_idx, from_name, to_name, seat, passenger_name, passenger_doc, phone, email, fare, source, hold_expires_at)
+      values (v_code, p_route, p_date, p_time, p_from, p_to, v_stops ->> p_from, v_stops ->> p_to, p_seats[v_i], v_name, v_doc, v_phone, v_email, v_fare, 'web', v_expires);
     exception when exclusion_violation then
       raise exception 'SEAT_TAKEN:%', p_seats[v_i];  -- revierte todo: no queda ningún asiento a medias
     end;
   end loop;
 
-  return jsonb_build_object('code', v_code, 'seats', to_jsonb(p_seats), 'fare', v_fare, 'total', case when v_fare is null then null else v_fare * cardinality(p_seats) end);
+  return jsonb_build_object('code', v_code, 'seats', to_jsonb(p_seats), 'fare', v_fare, 'total', case when v_fare is null then null else v_fare * cardinality(p_seats) end, 'expires', v_expires);
 end;
 $$;
 grant execute on function public.book_seats(text, date, text, int, int, text[], jsonb, text, text) to anon, authenticated;
