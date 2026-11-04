@@ -163,7 +163,7 @@ export function createScene(host, { onLook } = {}) {
 
     // el coche: apoyado en el camino, inclinado con la pendiente
     const bxS = X(disp), by = Y(disp) - rw / 2 + 1, slope = Math.atan2(Y(disp + 60 / k) - Y(disp - 60 / k), 120) * 180 / Math.PI;
-    const sc = Math.max(0.62, Math.min(1.15, H / 330));
+    const sc = Math.max(0.62, Math.min(W > 900 ? 1.75 : 1.15, (H / 330) * (W > 900 ? 1.35 : 1)));
     busG.setAttribute("transform", `translate(${bxS.toFixed(1)} ${by.toFixed(1)}) rotate(${slope.toFixed(2)}) scale(${sc.toFixed(3)})`);
     busG.classList.toggle("is-lost", view.freshness === "lost" || view.freshness === "none");
     const tagTxt = view.coach ? view.coach : "Colectivo";

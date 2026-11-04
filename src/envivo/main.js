@@ -5,6 +5,7 @@ import { loadContent } from "../scripts/content.js";
 import { ROUTES, JOURNEY, runsOn, short } from "../scripts/data.js";
 import { buildRoute, tripView, displayAlong, fmtClock, fmtIn, fmtAgo, shortName } from "./model.js";
 import { createScene } from "./scene.js";
+import { simulate } from "./sim.js";
 
 const POLL_MS = 8000, TZ = "America/Argentina/Jujuy", MINE_KEY = "pm-envivo-parada";
 const app = document.getElementById("app");
@@ -52,25 +53,30 @@ function pointAt(route, along) {
 }
 
 // ---------------------------------------------------------------- estado
-const S = { routes: new Map(), trips: [], skew: 0, loaded: false, error: "", lastOk: 0 };
+const S = { routes: new Map(), realRoutes: new Map(), simRoutes: null, trips: [], skew: 0, loaded: false, error: "", lastOk: 0, sim: false };
 const now = () => Date.now() + S.skew;
 const views = () => S.trips.map((t) => { const r = S.routes.get(t.route_id); return r ? tripView(r, t, now()) : null; }).filter(Boolean);
 
-async function loadRoutes() {
-  const raw = await rpc("public_routes");
-  const content = { routes: ROUTES, journey: JOURNEY };
-  S.routes = new Map(raw.map((r) => buildRoute(r, content)).filter(Boolean).map((r) => [r.id, r]));
-}
+const toMap = (raw) => { const content = { routes: ROUTES, journey: JOURNEY }; return new Map(raw.map((r) => buildRoute(r, content)).filter(Boolean).map((r) => [r.id, r])); };
+// Datos reales de la base. Mientras no haya ningún coche real en viaje (los GPS todavía no están conectados),
+// se muestra una simulación con el horario real de la web, siempre avisada como tal. Con el primer coche real, se apaga sola.
 async function poll() {
-  try {
-    if (!S.routes.size || Date.now() - (S.routesAt || 0) > 10 * 60_000) { await loadRoutes(); S.routesAt = Date.now(); }
-    const live = await rpc("public_live");
-    S.skew = Date.parse(live.now) - Date.now();
-    S.trips = live.trips || []; S.loaded = true; S.error = ""; S.lastOk = Date.now();
-  } catch (e) {
-    S.error = e.status === 404 ? "off" : "net";
-    S.loaded = true;
+  let real = null;
+  if (SUPABASE.url && SUPABASE.anonKey) {
+    try {
+      if (!S.realRoutes.size || Date.now() - (S.routesAt || 0) > 10 * 60_000) { S.realRoutes = toMap(await rpc("public_routes")); S.routesAt = Date.now(); }
+      real = await rpc("public_live"); S.error = "";
+    } catch (e) { S.error = e.status === 404 ? "off" : "net"; }
   }
+  const realTrips = (real?.trips || []).filter((t) => S.realRoutes.has(t.route_id));
+  if (real && realTrips.some((t) => t.status === "en_curso")) {
+    S.sim = false; S.routes = S.realRoutes; S.trips = realTrips; S.skew = Date.parse(real.now) - Date.now();
+  } else {
+    const sim = simulate(ROUTES, Date.now(), runsOn);
+    S.simRoutes ??= toMap(sim.routes);
+    S.sim = true; S.routes = S.simRoutes; S.trips = sim.live.trips; S.skew = 0; S.error = "";
+  }
+  S.loaded = true; S.lastOk = Date.now();
   render();
 }
 let pollTimer = 0;
@@ -83,6 +89,7 @@ const shell = h("div", { class: "ev" },
   h("header", { class: "top" },
     h("a", { class: "top__brand", href: "/", "aria-label": "Panamericano, ir a la web" }, h("img", { src: "/img/logo-panamericano-sm.webp", width: 360, height: 252, alt: "Panamericano de Jujuy S.A." })),
     h("span", { class: "top__title" }, "En vivo"), statusEl),
+  h("p", { class: "simbar", hidden: true, role: "note" }, h("b", {}, "Simulación"), " · Los coches se mueven según el horario real de la Ruta 9. Los GPS todavía no están conectados: así se va a ver."),
   h("main", { class: "page", id: "main" }));
 app.replaceChildren(shell);
 const page = shell.querySelector(".page");
@@ -91,21 +98,51 @@ function setStatus() {
   const [dot, txt] = statusEl.children;
   if (!S.loaded) return setText(txt, "Conectando");
   if (S.error === "off") { statusEl.dataset.s = "off"; return setText(txt, "No disponible"); }
+  shell.querySelector(".simbar").hidden = !S.sim;
+  if (S.sim) { statusEl.dataset.s = "sim"; return setText(txt, "Simulación"); }
   if (S.error) { statusEl.dataset.s = "warn"; return setText(txt, "Sin conexión, reintentando"); }
   statusEl.dataset.s = "ok"; setText(txt, `Actualizado ${fmtAgo(Date.now() - S.lastOk) || "recién"}`); void dot;
 }
 
 // ---------------------------------------------------------------- inicio: los viajes de ahora
 let screen = null;
+const wide = matchMedia("(min-width: 1000px)");
 function route() {
   const m = /^#\/v\/([\w-]+)/.exec(location.hash);
+  if (wide.matches && screen?.split) { screen.select(m ? m[1] : null); render(); return; }
   screen?.destroy?.();
-  screen = m ? tripScreen(m[1]) : homeScreen();
+  screen = wide.matches ? splitScreen(m ? m[1] : null) : m ? tripScreen(m[1]) : homeScreen();
   page.replaceChildren(screen.el);
-  window.scrollTo(0, 0);
+  page.classList.toggle("is-split", !!screen.split);
+  if (!screen.split) window.scrollTo(0, 0);
   render();
 }
 window.addEventListener("hashchange", route);
+wide.addEventListener("change", () => { screen?.destroy?.(); screen = null; route(); });
+
+// escritorio: la lista a la izquierda y el viaje elegido a la derecha, sin cambiar de pantalla
+function splitScreen(id) {
+  let sel = id, detail = null, detailId = null;
+  const home = homeScreen({ split: true, selected: () => sel });
+  const right = h("div", { class: "split__detail" });
+  const el = h("div", { class: "split" }, h("div", { class: "split__list" }, home.el), right);
+  return {
+    el, split: true,
+    select(v) { sel = v; },
+    destroy() { home.destroy(); detail?.destroy(); },
+    update() {
+      home.update();
+      const vs = views();
+      if (S.loaded && (!sel || !vs.some((v) => v.id === sel))) sel = (vs.find((v) => v.status === "en_curso" && v.freshness === "live") || vs[0])?.id || null;
+      if (sel !== detailId) {
+        detail?.destroy(); detailId = sel;
+        detail = sel ? tripScreen(sel, { embedded: true }) : null;
+        right.replaceChildren(detail ? detail.el : h("div", { class: "empty" }, h("strong", {}, "Elegí un viaje de la lista.")));
+      }
+      detail?.update();
+    },
+  };
+}
 
 function allStops() {
   const names = new Map();
@@ -113,10 +150,20 @@ function allStops() {
   return [...names.entries()].sort((a, b) => a[1].localeCompare(b[1], "es"));
 }
 
-function homeScreen() {
+function homeScreen({ split = false, selected = () => null } = {}) {
   const list = h("div", { class: "trips" }), later = h("section", { class: "later", hidden: true });
+  // celular: arriba, la ventanilla del colectivo que más te importa (el próximo a tu parada, o el primero en viaje)
+  const feat = split ? null : h("section", { class: "feat", hidden: true });
+  let featScene = null, featView = null, featRaf = 0;
+  const featName = h("strong"), featMeta = h("span"), featGo = h("a", { class: "feat__go" }, "Ver viaje");
+  if (feat) {
+    featScene = createScene(feat);
+    feat.append(h("div", { class: "feat__card" }, h("div", { class: "feat__t" }, featName, featMeta), featGo));
+    const loop = () => { if (featView && !feat.hidden) featScene.frame(now()); featRaf = requestAnimationFrame(loop); };
+    featRaf = requestAnimationFrame(loop);
+  }
   const mineSel = h("select", { id: "mine", onchange: () => { setMine(mineSel.value); render(); } });
-  const el = h("div", { class: "home" },
+  const el = h("div", { class: "home" }, feat,
     h("section", { class: "hello" },
       h("h1", {}, "¿Dónde viene el colectivo?"),
       h("p", {}, "La ubicación de los coches que están viajando ahora, parada por parada."),
@@ -126,6 +173,7 @@ function homeScreen() {
   let stopsKey = "";
   return {
     el,
+    destroy() { cancelAnimationFrame(featRaf); featScene?.destroy(); },
     update() {
       const opts = allStops(), k = opts.map((o) => o[0]).join("|");
       if (k !== stopsKey) { stopsKey = k; mineSel.replaceChildren(h("option", { value: "" }, "Elegí la tuya"), ...opts.map(([n, s]) => h("option", { value: n }, s))); }
@@ -134,6 +182,17 @@ function homeScreen() {
       // con tu parada elegida: primero los que todavía pasan por ella, el que llega antes arriba; los que ya pasaron, al final
       const toMine = (v) => { const i = mine ? v.route.stops.findIndex((s) => s.name === mine) : -1; if (i < 0) return 9e15; if (v.status === "en_curso" && i <= v.passed) return 8e15; const e = v.etas.get(v.route.stops[i].idx); return e && Number.isFinite(e.at) ? e.at : 7e15; };
       const vs = views().sort((a, b) => (mine ? toMine(a) - toMine(b) : 0) || (a.status === "en_curso" ? 0 : 1) - (b.status === "en_curso" ? 0 : 1) || a.planned - b.planned);
+      if (feat) {
+        const f = vs.find((v) => v.status === "en_curso" && v.freshness !== "none");
+        feat.hidden = !f; featView = f || null;
+        if (f) {
+          featScene.set(f, mine);
+          const nx = f.route.stops[f.next], e = nx && f.etas.get(nx.idx);
+          setText(featName, `${f.route.name} · ${f.tripTime}`);
+          setText(featMeta, nx && f.next > f.passed && e && Number.isFinite(e.at) ? `${f.coach} · ${nx.short} en ${fmtIn(e.at, now())}` : `${f.coach} · ${f.where}`);
+          featGo.setAttribute("href", `#/v/${f.id}`);
+        }
+      }
       if (!S.loaded) { list.replaceChildren(h("p", { class: "empty" }, "Buscando los colectivos…")); return; }
       if (S.error === "off") { list.replaceChildren(h("div", { class: "empty" }, h("strong", {}, "Esta función se está activando."), h("p", {}, "Muy pronto vas a poder ver acá dónde viene cada colectivo."))); return; }
       if (!vs.length) {
@@ -146,6 +205,7 @@ function homeScreen() {
           let r = rows.get(v.id);
           if (!r) { r = tripRow(v); rows.set(v.id, r); }
           r.update(v, mine);
+          r.el.classList.toggle("is-sel", split && selected() === v.id);
         }
         for (const [id, r] of rows) if (!seen.has(id)) { r.el.remove(); rows.delete(id); }
         const order = vs.map((v) => rows.get(v.id).el);
@@ -209,7 +269,7 @@ function paintLater(box, vs) {
 }
 
 // ---------------------------------------------------------------- un viaje: la ventanilla
-function tripScreen(id) {
+function tripScreen(id, { embedded = false } = {}) {
   const win = h("div", { class: "win" }), back = h("button", { type: "button", class: "win__back", hidden: true, onclick: () => scene.back() }, "Volver al colectivo");
   const live = h("span", { class: "win__live" }), alt = h("span", { class: "win__alt" });
   win.append(live, alt, back);
@@ -222,7 +282,7 @@ function tripScreen(id) {
   const tabMap = h("button", { type: "button", class: "tab", "aria-pressed": "false", onclick: () => tab("map") }, icon("map", 18), "Mapa");
   const shareBtn = h("button", { type: "button", class: "share", onclick: share, "aria-label": "Compartir este viaje" }, icon("share", 18), h("span", { class: "share__t" }, "Compartir"));
   const el = h("div", { class: "trip-v" },
-    h("div", { class: "head" }, h("a", { class: "head__back", href: "#/", "aria-label": "Volver a todos los viajes" }, icon("back", 22)), h("div", {}, title, meta), shareBtn),
+    h("div", { class: "head" }, embedded ? null : h("a", { class: "head__back", href: "#/", "aria-label": "Volver a todos los viajes" }, icon("back", 22)), h("div", {}, title, meta), shareBtn),
     win,
     h("div", { class: "body" },
       h("section", { class: "now", "aria-live": "polite" }, h("p", { class: "now__l" }, "Próxima parada"), h("div", { class: "now__row" }, nowName, nowIn), nowWhere, nowNote),
@@ -237,11 +297,12 @@ function tripScreen(id) {
     if (m && !mapApi) import("./map.js").then(({ createMap }) => createMap(mapBox)).then((api) => { mapApi = api; paintMap(); }).catch(() => { mapBox.textContent = "No se pudo cargar el mapa."; });
     else if (m) { mapApi.refresh(); mapApi.recenter(); paintMap(); }
   }
-  function paintMap() { if (!mapApi || !cur || mapBox.hidden) return; mapApi.set(cur, cur.freshness === "none" ? null : pointAt(cur.route, displayAlong(cur, now()))); }
+  function paintMap() { if (!mapApi || !cur || (mapBox.hidden && !embedded)) return; mapApi.set(cur, cur.freshness === "none" ? null : pointAt(cur.route, displayAlong(cur, now()))); }
   async function share() {
     const url = location.href, text = cur ? `Mirá dónde viene el colectivo ${cur.route.name} de las ${cur.tripTime}` : "Panamericano en vivo";
     try { if (navigator.share) await navigator.share({ title: "Panamericano en vivo", text, url }); else { await navigator.clipboard.writeText(url); setText(shareBtn.lastChild, "Link copiado"); setTimeout(() => setText(shareBtn.lastChild, "Compartir"), 2200); } } catch { /* cancelado */ }
   }
+  if (embedded) import("./map.js").then(({ createMap }) => createMap(mapBox)).then((api) => { mapApi = api; paintMap(); }).catch(() => { mapBox.textContent = "No se pudo cargar el mapa."; });
   function loop(t) { if (cur) scene.frame(now()); raf = requestAnimationFrame(loop); void t; }
   raf = requestAnimationFrame(loop);
   let lastMapPaint = 0;
@@ -311,8 +372,7 @@ setInterval(render, 1000);
 // ---------------------------------------------------------------- arranque
 (async () => {
   route();
-  if (!SUPABASE.url || !SUPABASE.anonKey) { S.loaded = true; S.error = "off"; render(); return; }
-  await loadContent(1500);
+  if (SUPABASE.url && SUPABASE.anonKey) await loadContent(1500);
   startPolling();
   if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("/sw-envivo.js", { scope: "/envivo" }).catch(() => {});
 })();

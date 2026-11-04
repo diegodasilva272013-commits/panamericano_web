@@ -165,3 +165,42 @@ img{display:block;max-width:100%;height:auto}
   .hello{padding:44px 0 28px}
 }
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* aviso de simulación (mientras los GPS no estén conectados) */
+.simbar{position:sticky;top:58px;z-index:25;padding:9px var(--gut);background:#f0b429;color:#1c1813;font-size:13.5px;line-height:1.35;text-align:center}
+.simbar b{font-weight:800}
+.top__live[data-s=sim] i{background:#f0b429}
+
+/* inicio en el celular: la ventanilla del próximo colectivo, arriba de todo */
+.feat{position:relative;height:clamp(230px,36vh,320px);margin:0 calc(var(--gut) * -1);overflow:hidden;background:#1a1714;touch-action:pan-y}
+.feat__card{position:absolute;left:12px;right:12px;bottom:12px;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 10px 10px 14px;border-radius:14px;background:rgba(13,12,11,.84);color:#fff}
+.feat__t{min-width:0;display:flex;flex-direction:column}
+.feat__t strong{font:700 16px/1.2 var(--f-display);letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.feat__t span{font-size:13px;color:rgba(255,255,255,.78);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.feat__go{flex:none;display:inline-flex;align-items:center;min-height:42px;padding:0 16px;border-radius:21px;background:var(--red);color:#fff;font-weight:700;font-size:14px}
+.home .feat+.hello{padding-top:22px}
+.home .feat+.hello h1{font-size:clamp(28px,7.4vw,44px)}
+
+/* escritorio: lista y viaje lado a lado, como una app */
+.trip.is-sel{box-shadow:inset 0 0 0 2px var(--red);background:#fff8f2}
+@media(min-width:1000px){
+  .page.is-split{max-width:1480px;padding-top:20px}
+  .split{display:grid;grid-template-columns:400px minmax(0,1fr);gap:28px;align-items:start}
+  .split__list{max-height:calc(100dvh - 58px - 40px);overflow-y:auto;padding:4px 6px 24px 2px;scrollbar-width:thin}
+  .split__detail{position:sticky;top:78px;min-width:0}
+  .split .hello{padding:10px 0 16px}
+  .split .hello h1{font-size:32px;max-width:none}
+  .split .hello p{font-size:15px}
+  .split .mine{max-width:none}
+  .split .trips{grid-template-columns:1fr}
+  .split .later{margin-top:24px}
+  .split__detail .head{padding-top:4px}
+  .split__detail .win{height:min(50vh,470px)}
+  .split__detail .body{max-width:none;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:28px;align-items:start}
+  .split__detail .now{grid-column:1/-1}
+  .split__detail .tabs{display:none}
+  .split__detail .stops{display:block!important;grid-column:1}
+  .split__detail .map{display:block!important;grid-column:2;margin-top:14px;height:min(52vh,460px)}
+  .split__detail .fine{text-align:left;margin-left:0}
+  .page.is-split .simbar{top:58px}
+}

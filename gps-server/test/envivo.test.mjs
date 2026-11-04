@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { buildRoute, tripView, displayAlong, profileFor, fmtIn } from "../../src/envivo/model.js";
 import { cumulative } from "../geo.js";
 import { freshDb, as, rpc } from "./helpers.mjs";
+import { simulate } from "../../src/envivo/sim.js";
 
 // una recta norte-sur de ~40 km con 3 paradas
 const LINE = [[-24.0, -65.3], [-23.8, -65.3], [-23.64, -65.3]];
@@ -113,4 +114,22 @@ test("la base: el público lee recorridos y viajes en curso por las dos funcione
   for (const secret of ["AB123CD", "860000000000125", "ZZ999ZZ", "\"speed\""]) assert.ok(!text.includes(secret), `no expone ${secret}`);
   // las tablas siguen cerradas al público
   for (const tbl of ["vehicles", "vehicle_state", "fleet_trips", "gps_positions"]) await assert.rejects(as(db, "anon", () => db.query(`select * from ${tbl}`)), /permission denied/, tbl);
+});
+
+test("simulación: con el horario real, los coches en viaje están sobre su ruta y avanzan parada por parada", () => {
+  const routes = [{ id: "jj-lq", from: "San Salvador de Jujuy", to: "La Quiaca*", stops: ["Purmamarca", "Tilcara", "Humahuaca", "Abra Pampa", "La Quiaca"], times: ["06:00", "09:00"] },
+    { id: "jj-iru", from: "San Salvador de Jujuy", to: "Iruya", stops: ["Humahuaca", "Iruya"], times: ["06:00"] }];
+  const now = Date.parse("2026-11-04T08:00:00-03:00");
+  const { routes: rs, live } = simulate(routes, now);
+  assert.deepEqual(rs.map((r) => r.route_id), ["jj-lq"], "solo rutas por la Ruta 9 (Iruya no está en la troncal)");
+  const r = buildRoute(rs[0], CONTENT);
+  const running = live.trips.filter((t) => t.status === "en_curso"), soon = live.trips.filter((t) => t.status === "programado");
+  assert.equal(running.length, 1); assert.equal(soon.length, 1, "la de las 09:00 sale en menos de 3 h");
+  const v = tripView(r, running[0], now);
+  assert.equal(v.freshness, "live");
+  assert.ok(v.along > 0 && v.along < r.length);
+  assert.ok(v.passed >= 1, "a las 2 h de salir ya pasó Purmamarca");
+  // una hora después va más adelante
+  const later = simulate(routes, now + 3600_000).live.trips.find((t) => t.id === running[0].id);
+  assert.ok(tripView(r, later, now + 3600_000).along > v.along);
 });
