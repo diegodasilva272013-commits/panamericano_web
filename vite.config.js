@@ -11,7 +11,7 @@ const site = () => {
 
 // /admin -> admin.html y /erp -> erp.html (en desarrollo y en vite preview; en Vercel lo resuelve cleanUrls de vercel.json)
 const adminRoute = () => {
-  const mw = (req, _res, next) => { for (const p of ["admin", "erp"]) if (req.url === "/" + p || req.url.startsWith("/" + p + "?")) req.url = "/" + p + ".html"; next(); };
+  const mw = (req, _res, next) => { for (const p of ["admin", "erp", "envivo"]) if (req.url === "/" + p || req.url.startsWith("/" + p + "?")) req.url = "/" + p + ".html"; next(); };
   return { name: "admin-route", configureServer(s) { s.middlewares.use(mw); }, configurePreviewServer(s) { s.middlewares.use(mw); } };
 };
 
@@ -21,6 +21,6 @@ export default {
     adminRoute(),
   ],
   build: {
-    rollupOptions: { input: { main: resolve(import.meta.dirname, "index.html"), admin: resolve(import.meta.dirname, "admin.html"), erp: resolve(import.meta.dirname, "erp.html") } },
+    rollupOptions: { input: { main: resolve(import.meta.dirname, "index.html"), admin: resolve(import.meta.dirname, "admin.html"), erp: resolve(import.meta.dirname, "erp.html"), envivo: resolve(import.meta.dirname, "envivo.html") } },
   },
 };

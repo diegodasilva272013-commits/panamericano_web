@@ -15,7 +15,7 @@ export async function makeDb({ flota = true } = {}) {
   let schema = fs.readFileSync(SQL + "schema.sql", "utf8");
   schema = schema.slice(0, schema.indexOf("-- 4) ARCHIVOS")); // la parte de archivos usa el almacenamiento de Supabase, que acá no existe
   await db.exec(schema);
-  for (const f of ["booking.sql", "erp.sql", "pagos.sql", ...(flota ? ["flota.sql"] : [])]) await db.exec(fs.readFileSync(SQL + f, "utf8"));
+  for (const f of ["booking.sql", "erp.sql", "pagos.sql", ...(flota ? ["flota.sql", "envivo.sql"] : [])]) await db.exec(fs.readFileSync(SQL + f, "utf8"));
   await db.exec(`grant usage on schema public to anon, authenticated, service_role;`);
   return db;
 }

@@ -56,3 +56,11 @@ select,input{font:inherit;color:inherit}
 .nav.is-light .nav__links a:hover{color:var(--paper-ink)}
 .nav.is-light .nav__call{background:var(--paper-ink);color:var(--paper)}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+
+/* acceso a "En vivo" (dónde vienen los colectivos) */
+.nav__live{display:inline-flex;align-items:center;gap:7px}
+.nav__live span{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px rgba(232,38,31,.25)}
+.nav__envivo{display:none;align-items:center;gap:7px;min-height:44px;margin-left:auto;margin-right:8px;padding:0 16px;border-radius:99px;font-size:14px;font-weight:700;color:var(--text);box-shadow:inset 0 0 0 1.5px rgba(243,239,230,.45)}
+.nav__envivo span{width:7px;height:7px;border-radius:50%;background:var(--accent)}
+.nav.is-light .nav__envivo{color:var(--paper-ink);box-shadow:inset 0 0 0 1.5px rgba(20,20,18,.35)}
+@media(max-width:860px){.nav__envivo{display:inline-flex}}

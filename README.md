@@ -155,3 +155,20 @@ Horarios, destinos, teléfonos y boleterías salen de fuentes públicas (relevad
 
 ## Base y licencia
 El efecto "sticky grid" de la sección *Conectamos caminos* está basado en [codrops-sticky-grid-scroll](https://github.com/theoplawinski/codrops-sticky-grid-scroll) de Theo Plawinski (licencia MIT). Ver `LICENSE-NOTE.txt`.
+
+## En vivo para pasajeros (`/envivo`)
+
+App web instalable (en el celular: "Agregar a pantalla de inicio") donde los pasajeros ven dónde viene cada colectivo:
+
+- **La ventanilla:** el coche dibujado de costado avanza sobre el camino con la altura real de la Ruta 9 (tomada de la sección "Recorrido" de la web); las paradas son carteles que se acercan. Se puede arrastrar para mirar el camino.
+- **Próxima parada y minutos**, la línea de paradas (hechas, próxima, estimadas) y el **mapa**.
+- **Tu parada:** el pasajero elige la suya y ve qué coche pasa primero y a qué hora.
+- Si un coche pierde señal (zonas sin cobertura), se avisa y se muestra la última posición y el horario previsto.
+
+Cómo se activa:
+
+1. En Supabase → SQL Editor ejecutar `supabase/envivo.sql` (después de `flota.sql`).
+2. En ERP → Flota → Geocercas y recorridos, cada servicio tiene que tener su **recorrido** y sus **paradas con los minutos** desde la salida.
+3. En ERP → Flota → Viajes, asignar el **coche** a cada salida. Desde que el coche sale, aparece en `/envivo`.
+
+Qué ve el público: solo los viajes en curso y los que salen en las próximas 3 horas, con el número interno del coche, su última posición y las paradas hechas. Nunca la patente, el IMEI, la velocidad ni las alertas (las tablas siguen cerradas; entra solo por dos funciones de lectura).
