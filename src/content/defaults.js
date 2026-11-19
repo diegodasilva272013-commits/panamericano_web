@@ -16,7 +16,7 @@ export const DEFAULT_CONTENT = {
 
   site: {
     whatsapp: "5493884640178",
-    agentId: "agent_0401m4gr7f3mf6kbawg54f6rwyv9",
+    agentId: "agent_8501m7t0g304fafrahs5yv00bcq9",
     phoneLabel: "0388 425-4331",
     phoneTel: "+543884254331",
     address: "Terminal de Ómnibus Gral. Manuel Belgrano · Puesto del Marqués 605 · San Salvador de Jujuy (4600)",
