@@ -21,6 +21,12 @@ let muted = false;
 let t0 = 0, tick = 0, raf = 0, lvl = 0;
 let audio = null, ringTimer = 0, attemptId = 0;
 
+// El primer mensaje del agente usa {{saludo}}: si no se manda, ElevenLabs corta la llamada apenas conecta.
+const saludo = () => {
+  const h = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "America/Argentina/Jujuy", hour: "2-digit", hour12: false }).format(new Date()));
+  return h >= 6 && h < 13 ? "buen día" : h >= 13 && h < 20 ? "buenas tardes" : "buenas noches";
+};
+
 const setLabel = (btn, txt) => (btn.querySelector(".ctl__txt").textContent = txt);
 const fmt = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 
@@ -119,7 +125,7 @@ async function startCall() {
   const tryConnect = (connectionType) => {
     let timer;
     const timeout = new Promise((_, rej) => (timer = setTimeout(() => rej(new Error("timeout")), 12000)));
-    const session = sdk().then((Conversation) => Conversation.startSession({ agentId: AGENT_ID, connectionType, ...callbacks }));
+    const session = sdk().then((Conversation) => Conversation.startSession({ agentId: AGENT_ID, connectionType, dynamicVariables: { saludo: saludo() }, ...callbacks }));
     // si la sesión llega tarde (después del timeout), se descarta
     session.then((c) => { if (attempt !== attemptId || phase === "idle") c.endSession().catch(() => {}); }).catch(() => {});
     return Promise.race([session, timeout]).finally(() => clearTimeout(timer));
